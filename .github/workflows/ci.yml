@@ -1,0 +1,67 @@
+name: CI
+
+on:
+  push:
+    branches: [main, master]
+  pull_request:
+
+jobs:
+  core:
+    name: scr_twin_core (physics)
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        python-version: ["3.11", "3.12"]
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python ${{ matrix.python-version }}
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+
+      - name: Install core (test + dev extras)
+        run: python -m pip install -e "core[test,dev]"
+
+      - name: Lint (ruff)
+        run: ruff check core/scr_twin_core core/tests
+
+      - name: Type-check (mypy)
+        working-directory: core
+        run: mypy scr_twin_core
+
+      - name: Unit + analytical benchmark tests (pytest)
+        run: pytest core/tests -q
+
+      - name: Acceptance-gate report (spec 5)
+        working-directory: core
+        run: python -m scr_twin_core.validation
+
+  api:
+    name: FastAPI backend
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Install core + server
+        run: |
+          python -m pip install -e core
+          python -m pip install -r server/requirements.txt
+      - name: API tests (fuzz + contract + determinism)
+        run: pytest server/tests -q
+
+  frontend:
+    name: React console
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+      - name: Install & type-check + build
+        working-directory: app
+        run: |
+          npm ci
+          npm run build

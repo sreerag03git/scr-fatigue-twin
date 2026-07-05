@@ -1,0 +1,100 @@
+/* Console layout — control grid whose structure is the data flow. */
+
+.app {
+  display: flex;
+  flex-direction: column;
+  height: 100vh;
+  overflow: hidden;
+}
+
+/* Top bar */
+.topbar {
+  display: flex;
+  align-items: center;
+  gap: 20px;
+  height: 52px;
+  padding: 0 14px;
+  border-bottom: 1px solid var(--line);
+  background: linear-gradient(180deg, var(--bg-2), var(--bg-1s));
+  flex: 0 0 auto;
+  z-index: 5;
+}
+.topbar__brand { display: flex; align-items: center; gap: 10px; }
+.topbar__mark { display: grid; place-items: center; width: 30px; height: 30px; border: 1px solid var(--line-2); border-radius: var(--r); background: var(--bg-inset); }
+.topbar__title { font-size: 14px; font-weight: 700; letter-spacing: 0.06em; }
+.topbar__sub { font-size: 10px; color: var(--text-lo); letter-spacing: 0.05em; }
+.topbar__flow { display: flex; align-items: center; gap: 4px; flex: 1; justify-content: center; }
+.flowstep { font-size: 11px; color: var(--text-lo); letter-spacing: 0.04em; display: inline-flex; gap: 6px; align-items: center; }
+.flowstep__arw { color: var(--text-faint); }
+.topbar__actions { display: flex; align-items: center; gap: 8px; }
+
+/* Console grid */
+.console {
+  flex: 1;
+  overflow: auto;
+  display: grid;
+  grid-template-columns: 322px minmax(0, 1fr);
+  gap: 10px;
+  padding: 10px;
+  align-items: start;
+}
+.rail { display: flex; flex-direction: column; gap: 10px; position: sticky; top: 0; min-width: 0; }
+.stage { display: flex; flex-direction: column; gap: 10px; min-width: 0; }
+.stage__row2 { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; min-width: 0; }
+
+/* Signature posterior layout */
+.posterior { display: grid; grid-template-columns: 1.55fr 1fr; gap: 16px; min-width: 0; }
+.posterior__fan { min-width: 0; }
+.posterior__side { min-width: 0; border-left: 1px solid var(--line); padding-left: 14px; }
+
+/* Status bar */
+.statusbar {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  height: 26px;
+  padding: 0 12px;
+  border-top: 1px solid var(--line);
+  background: var(--bg-1s);
+  font-size: 11px;
+  color: var(--text-lo);
+  flex: 0 0 auto;
+}
+.statusbar__item { display: inline-flex; align-items: center; gap: 6px; white-space: nowrap; }
+.statusbar__dot { width: 7px; height: 7px; border-radius: 50%; }
+.statusbar__spacer { flex: 1; }
+
+/* Gates table */
+.gates { width: 100%; border-collapse: collapse; }
+.gates td { padding: 5px 6px; border-bottom: 1px solid var(--line); vertical-align: middle; }
+.gates tr:last-child td { border-bottom: 0; }
+.gates__status { width: 18px; }
+.gates__name { font-size: 12px; color: var(--text-hi); white-space: nowrap; }
+.gates__actual { font-size: 10.5px; color: var(--text-lo); text-align: right; }
+.gatedot { display: inline-block; width: 8px; height: 8px; border-radius: 50%; }
+.gatedot--ok { background: var(--good); box-shadow: 0 0 6px var(--good); }
+.gatedot--bad { background: var(--alarm); box-shadow: 0 0 6px var(--alarm); }
+
+/* Boot veil */
+.boot-veil {
+  position: fixed; inset: 0; display: grid; place-content: center; gap: 12px; justify-items: center;
+  background: var(--bg-0); color: var(--text-mid); font-size: 12px; letter-spacing: 0.05em; z-index: 20;
+}
+.boot-veil__spinner {
+  width: 26px; height: 26px; border: 2px solid var(--line-2); border-top-color: var(--signal);
+  border-radius: 50%; animation: spin 0.8s linear infinite;
+}
+@keyframes spin { to { transform: rotate(360deg); } }
+
+/* Responsive: laptop / tablet */
+@media (max-width: 1180px) {
+  .console { grid-template-columns: 1fr; }
+  .rail { position: static; flex-direction: row; flex-wrap: wrap; }
+  .rail > * { flex: 1 1 320px; }
+  .posterior { grid-template-columns: 1fr; }
+  .posterior__side { border-left: 0; padding-left: 0; border-top: 1px solid var(--line); padding-top: 12px; }
+}
+@media (max-width: 760px) {
+  .stage__row2 { grid-template-columns: 1fr; }
+  .topbar__flow { display: none; }
+}
