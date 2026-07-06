@@ -28,11 +28,25 @@ Notes:
 - The results DB lives in `%LOCALAPPDATA%\SCR-Twin\` when frozen (writable,
   per-user), and in `data/` during development.
 
-## Making an installer (optional)
+## Windows installer (Inno Setup)
 
-The one-dir bundle can be wrapped into a signed installer with Inno Setup or WiX
-(package the `SCR-Twin\` folder, add a Start-menu shortcut to `SCR-Twin.exe`).
-This step is packaging-only and does not touch the app.
+The one-dir bundle is wrapped into a proper `Setup.exe` (per-user, no admin) with
+Start-menu + optional desktop shortcuts and an uninstaller:
+
+```powershell
+winget install --id JRSoftware.InnoSetup      # one-time
+./packaging/build_desktop.ps1                  # produce dist/SCR-Twin/
+./packaging/build_installer.ps1                # -> dist/SCR-Twin-Setup-0.1.0.exe
+```
+
+`packaging/installer.iss` is the Inno Setup script; `build_installer.ps1` finds
+`ISCC.exe` and passes the bundle path/version as `/D` defines.
+
+Verified on this machine: the installer compiles (~87 MB Setup.exe from the 303 MB
+bundle), **silent-installs (exit 0)** all files + frontend + Start-menu shortcut +
+uninstaller (~310 MB installed to `%LOCALAPPDATA%\Programs\SCR-Twin`), and
+**uninstalls cleanly (exit 0)** leaving no trace. Sign the Setup.exe with a code-
+signing certificate (`signtool`) before public distribution.
 
 ## Native Tauri shell — status
 
