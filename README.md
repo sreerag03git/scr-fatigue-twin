@@ -16,7 +16,7 @@ Using Existing FPSO Motion Reference Unit Data."*
 | `server/` — FastAPI backend | REST + WebSocket exposing the core; typed Pydantic contracts; fuzz-safe ingestion; serves the built frontend offline. 12 API tests. |
 | `app/` — React + TypeScript console | Instrument-grade dark console: MRU → H(f) → rainflow/S-N/Miner → posterior → decision, with the signature contracting posterior fan, live spectra, RBI + fleet economics, run history (browse/re-open persisted runs), provenance export, and an in-app validation view. Bespoke SVG charts, custom design system. |
 | Persistence | Local SQLite results store; every run auto-persisted and reproducible from an exported provenance bundle. |
-| `packaging/` — desktop build | **PyInstaller standalone offline app** (`SCR-Twin.exe`) — bundles Python/SciPy/FastAPI + the console; no Python/Node/network needed. Verified: boots, 9/9 gates, full analysis, offline. |
+| `packaging/` — desktop build + installer | **PyInstaller standalone offline app** (`SCR-Twin.exe`) — bundles Python/SciPy/FastAPI + the console; no Python/Node/network needed. Wrapped into an **Inno Setup `Setup.exe`** (per-user, Start-menu/desktop shortcuts, uninstaller). Verified: bundle boots + 9/9 gates + full analysis offline; installer silent-installs and uninstalls cleanly. |
 
 Architecture note: the spec recommends a Tauri desktop shell (Option A). This
 build ships a **PyInstaller standalone app** (spec's "reliability wins" fallback)
