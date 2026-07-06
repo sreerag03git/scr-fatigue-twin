@@ -31,6 +31,7 @@ added without touching the physics.
 core/                 pure, tested physics (no UI deps)  ── scr_twin_core
 server/               FastAPI backend over the core (REST + WebSocket)
 app/                  React + TypeScript console (bespoke SVG charts, dark HMI)
+streamlit_app.py      shareable Streamlit console (Plotly) over the same core
 data/samples/         badged SYNTHETIC sample MRU + generator
 .github/workflows/    CI: pytest (core+api) + ruff + mypy + gates + frontend build
 run.ps1               one-command launcher
@@ -78,6 +79,23 @@ python data/samples/generate_sample_mru.py   # regenerate the sample dataset
 
 See [core/README.md](core/README.md) for the module map, physics references, and
 how to plug in real MRU data and a project-specific transfer function.
+
+## Shareable web app (Streamlit)
+
+A second front-end for sharing a live link — same tested core, so the numbers are
+identical to the desktop console (it reuses `server.service`, no re-implementation).
+
+```bash
+pip install -r requirements.txt          # streamlit + plotly + core deps
+streamlit run streamlit_app.py           # opens http://localhost:8501
+```
+
+**Deploy (free, public link):** push this repo to GitHub, go to
+[share.streamlit.io](https://share.streamlit.io), and point it at
+`streamlit_app.py`. `requirements.txt` and `.streamlit/config.toml` are already
+set up; the physics core is imported from `./core` on `sys.path`, so nothing else
+needs configuring. The app is fully reactive (JONSWAP/upload → posterior →
+inspection → economics) with a downloadable provenance bundle.
 
 ## Acceptance gates (spec §5)
 
