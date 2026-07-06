@@ -34,8 +34,8 @@ from server import service  # noqa: E402
 # --------------------------------------------------------------------------- #
 # Palette / theme
 # --------------------------------------------------------------------------- #
-SIGNAL, SIGNAL2, AMBER, ALARM = "#33b7c4", "#57d0da", "#e0a445", "#e75740"
-GRID, TEXT, TEXTHI, PAPER = "#1c2731", "#9db0bd", "#e7eef3", "rgba(0,0,0,0)"
+SIGNAL, SIGNAL2, AMBER, ALARM = "#0f8f9c", "#0b7079", "#b4791a", "#c33d28"
+GRID, TEXT, TEXTHI, PAPER = "#dce4e8", "#3f515c", "#1a2830", "rgba(0,0,0,0)"
 SN_CLASSES = ["B1", "B2", "C", "C1", "C2", "D", "E", "F", "F1", "F3", "G"]
 
 st.set_page_config(
@@ -48,33 +48,34 @@ st.set_page_config(
 st.markdown(
     """
     <style>
-      :root { --sig:#33b7c4; --amber:#e0a445; }
+      :root { --sig:#0f8f9c; --amber:#b4791a; }
       .stApp { background:
-        radial-gradient(120% 80% at 50% -10%, #111c22 0%, #0a0e11 55%); color:#c4d2db; }
-      section[data-testid="stSidebar"] { background:#0c1216; border-right:1px solid #1c2731; }
-      h1,h2,h3,h4 { letter-spacing:.01em; }
+        radial-gradient(120% 80% at 50% -8%, #ffffff 0%, #eef1f3 62%); color:#1f2b33; }
+      section[data-testid="stSidebar"] { background:#f5f7f8; border-right:1px solid #d3dbe0; }
+      h1,h2,h3,h4 { letter-spacing:.01em; color:#1a2830; }
       .mono, code, [data-testid="stMetricValue"] {
         font-family:"JetBrains Mono","Cascadia Mono",Consolas,monospace !important; }
       .brand { display:flex; align-items:center; gap:12px; margin:-6px 0 2px; }
-      .brand h1 { font-size:26px; margin:0; letter-spacing:.16em; color:#e7eef3; font-weight:600; }
-      .brand .sub { font-size:11px; letter-spacing:.14em; text-transform:uppercase; color:#647885; }
+      .brand h1 { font-size:26px; margin:0; letter-spacing:.16em; color:#1a2830; font-weight:600; }
+      .brand .sub { font-size:11px; letter-spacing:.14em; text-transform:uppercase; color:#6b7d88; }
       .kpi-row { display:grid; grid-template-columns:repeat(auto-fit,minmax(150px,1fr)); gap:10px; margin:6px 0 4px; }
-      .kpi { background:#0e1418; border:1px solid #1c2731; border-radius:8px; padding:11px 13px; }
-      .kpi .lab { font-size:9.5px; letter-spacing:.09em; text-transform:uppercase; color:#647885; }
-      .kpi .val { font-family:"JetBrains Mono",Consolas,monospace; font-size:22px; color:#e7eef3;
+      .kpi { background:#ffffff; border:1px solid #e2e8ec; border-radius:8px; padding:11px 13px;
+        box-shadow:0 1px 2px rgba(20,40,55,0.04); }
+      .kpi .lab { font-size:9.5px; letter-spacing:.09em; text-transform:uppercase; color:#6b7d88; }
+      .kpi .val { font-family:"JetBrains Mono",Consolas,monospace; font-size:22px; color:#1a2830;
         line-height:1.15; font-variant-numeric:tabular-nums; margin-top:3px; }
-      .kpi .val small { font-size:11px; color:#647885; margin-left:3px; }
-      .kpi .val.sig { color:#57d0da; } .kpi .val.amber { color:#e0a445; } .kpi .val.alarm { color:#e75740; }
+      .kpi .val small { font-size:11px; color:#6b7d88; margin-left:3px; }
+      .kpi .val.sig { color:#0b7079; } .kpi .val.amber { color:#b4791a; } .kpi .val.alarm { color:#c33d28; }
       .tag { display:inline-block; font-family:monospace; font-size:10px; letter-spacing:.06em; padding:2px 8px;
-        border-radius:5px; border:1px solid #2a3843; color:#9db0bd; }
-      .tag.syn { color:#e0a445; border-color:#6a5223; } .tag.pass { color:#56c08a; border-color:#2c5a45; }
-      .tag.fail { color:#e75740; border-color:#6e2f26; }
-      .sec { font-size:11px; letter-spacing:.12em; text-transform:uppercase; color:#8aa0ad;
-        border-bottom:1px solid #1c2731; padding-bottom:5px; margin:14px 0 8px; }
-      .gate { display:flex; align-items:center; gap:9px; padding:5px 2px; border-bottom:1px solid #141c22; font-size:12.5px; }
+        border-radius:5px; border:1px solid #c2ccd3; color:#3f515c; background:#ffffff; }
+      .tag.syn { color:#b4791a; border-color:#dcbd86; } .tag.pass { color:#1f8a5b; border-color:#a7d3bd; }
+      .tag.fail { color:#c33d28; border-color:#e2a99f; }
+      .sec { font-size:11px; letter-spacing:.12em; text-transform:uppercase; color:#56707d;
+        border-bottom:1px solid #d3dbe0; padding-bottom:5px; margin:14px 0 8px; }
+      .gate { display:flex; align-items:center; gap:9px; padding:5px 2px; border-bottom:1px solid #e6eaec; font-size:12.5px; }
       .gate .dot { width:8px; height:8px; border-radius:50%; flex:none; }
-      .gate .actual { margin-left:auto; font-family:monospace; font-size:11px; color:#8aa0ad; }
-      .foot { color:#4a5a66; font-size:10.5px; font-family:monospace; letter-spacing:.05em; }
+      .gate .actual { margin-left:auto; font-family:monospace; font-size:11px; color:#56707d; }
+      .foot { color:#8496a0; font-size:10.5px; font-family:monospace; letter-spacing:.05em; }
     </style>
     """,
     unsafe_allow_html=True,
@@ -165,7 +166,7 @@ def fan_fig(fan: dict, p50: float) -> go.Figure:
     yrs = fan["years"]
     f.add_scatter(x=yrs, y=fan["high"], line=dict(width=0), hoverinfo="skip")
     f.add_scatter(x=yrs, y=fan["low"], fill="tonexty", line=dict(width=0),
-                  fillcolor="rgba(224,164,69,0.16)", name="90% CI", hoverinfo="skip")
+                  fillcolor="rgba(180,121,26,0.15)", name="90% CI", hoverinfo="skip")
     f.add_scatter(x=yrs, y=fan["median"], line=dict(color=SIGNAL2, width=2.4), name="P50")
     f.add_hline(y=p50, line=dict(color=SIGNAL, width=0.8, dash="dot"))
     f.update_layout(
@@ -179,7 +180,7 @@ def pdf_fig(post: dict) -> go.Figure:
     f = _fig(250)
     edges, counts = post["hist_edges"], post["hist_counts"]
     centers = [(edges[i] + edges[i + 1]) / 2 for i in range(len(counts))]
-    f.add_bar(x=centers, y=counts, marker_color="rgba(51,183,196,0.55)",
+    f.add_bar(x=centers, y=counts, marker_color="rgba(15,143,156,0.35)",
               marker_line_color=SIGNAL, marker_line_width=0.3)
     for key, col in (("p10", AMBER), ("p50", SIGNAL2), ("p90", SIGNAL)):
         f.add_vline(x=post[key], line=dict(color=col, width=1.2, dash="dash"),
@@ -193,7 +194,7 @@ def pdf_fig(post: dict) -> go.Figure:
 def pof_fig(insp: dict) -> go.Figure:
     f = _fig(250)
     f.add_scatter(x=insp["pof_years"], y=insp["pof_vals"], line=dict(color=AMBER, width=2),
-                  fill="tozeroy", fillcolor="rgba(224,164,69,0.10)")
+                  fill="tozeroy", fillcolor="rgba(180,121,26,0.10)")
     f.add_hline(y=insp["target_pof"], line=dict(color=ALARM, width=1, dash="dash"),
                 annotation_text="target", annotation_font_color=ALARM, annotation_font_size=9)
     f.add_vline(x=insp["next_inspection_year"], line=dict(color=SIGNAL2, width=1.4, dash="dot"),
@@ -276,8 +277,8 @@ with head_l:
     st.markdown(
         '<div class="brand">'
         '<svg width="30" height="30" viewBox="0 0 22 22"><path d="M3 19 C 7 19, 8 6, 19 3" '
-        'fill="none" stroke="#33b7c4" stroke-width="1.7"/><circle cx="3" cy="19" r="2.2" fill="#e0a445"/>'
-        '<circle cx="19" cy="3" r="1.7" fill="#57d0da"/></svg>'
+        'fill="none" stroke="#0f8f9c" stroke-width="1.7"/><circle cx="3" cy="19" r="2.2" fill="#b4791a"/>'
+        '<circle cx="19" cy="3" r="1.7" fill="#0b7079"/></svg>'
         '<div><h1>SCR·TWIN</h1><div class="sub">TDP Fatigue Integrity Console</div></div></div>',
         unsafe_allow_html=True,
     )

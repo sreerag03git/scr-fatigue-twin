@@ -1,10 +1,10 @@
-# Instrument-grade dark theme for the shareable Streamlit console.
+# Instrument-grade light "report" theme for the shareable Streamlit console.
 [theme]
-base = "dark"
-primaryColor = "#33b7c4"
-backgroundColor = "#0a0e11"
-secondaryBackgroundColor = "#0e1418"
-textColor = "#c4d2db"
+base = "light"
+primaryColor = "#0f8f9c"
+backgroundColor = "#ffffff"
+secondaryBackgroundColor = "#f5f7f8"
+textColor = "#1f2b33"
 font = "sans serif"
 
 [server]
