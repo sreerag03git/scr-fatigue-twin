@@ -4,6 +4,7 @@ import type {
   AnalysisConfig,
   AnalyzeResponse,
   DataHealth,
+  RunSummary,
   SNClass,
   SyntheticParams,
   ValidationResponse,
@@ -32,10 +33,15 @@ interface Store {
   result: AnalyzeResponse | null;
   error: string | null;
 
+  runs: RunSummary[];
+  activeRunId: number | null;
+
   theme: "dark" | "light";
 
   boot: () => Promise<void>;
   run: () => Promise<void>;
+  refreshRuns: () => Promise<void>;
+  loadRun: (id: number) => Promise<void>;
   setSource: (s: Source) => void;
   patchSynthetic: (p: Partial<SyntheticParams>) => void;
   patchRiser: (p: Partial<AnalysisConfig["riser"]>) => void;
@@ -59,6 +65,8 @@ export const useStore = create<Store>((set, get) => ({
   status: "idle",
   result: null,
   error: null,
+  runs: [],
+  activeRunId: null,
   theme: "dark",
 
   boot: async () => {
@@ -90,10 +98,44 @@ export const useStore = create<Store>((set, get) => ({
         set({ status: "error", error: "No uploaded dataset selected." });
         return;
       }
-      set({ status: "ready", result });
+      set({ status: "ready", result, activeRunId: result.run_id ?? null });
+      void get().refreshRuns();
     } catch (e) {
       const msg = e instanceof ApiError ? e.message : e instanceof Error ? e.message : String(e);
       set({ status: "error", error: msg });
+    }
+  },
+
+  refreshRuns: async () => {
+    try {
+      const r = await api.runs();
+      set({ runs: r.runs });
+    } catch {
+      /* run history is non-critical; leave it as-is on error */
+    }
+  },
+
+  loadRun: async (id) => {
+    set({ status: "loading", error: null });
+    try {
+      const r = await api.getRun(id);
+      const src = r.payload.source;
+      set({
+        result: r.payload,
+        config: r.config,
+        activeRunId: id,
+        status: "ready",
+        source: src?.kind === "upload" ? "upload" : "synthetic",
+        synthetic:
+          src?.kind === "synthetic"
+            ? {
+                hs: Number(src.hs), tp: Number(src.tp), gamma: Number(src.gamma),
+                duration: Number(src.duration), fs: Number(src.fs), seed: Number(src.seed),
+              }
+            : get().synthetic,
+      });
+    } catch (e) {
+      set({ status: "error", error: e instanceof Error ? e.message : String(e) });
     }
   },
 

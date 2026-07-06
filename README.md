@@ -14,13 +14,16 @@ Using Existing FPSO Motion Reference Unit Data."*
 |-----------|-------|
 | `core/` — `scr_twin_core` physics package | **Complete**: spectral, catenary/Morison `H(f)`, rainflow, S-N, Miner, spectral-damage, environment, Monte Carlo, Bayesian, ingestion, decision/economics, config, full-chain pipeline, validation. ~180 pytest tests, ruff + mypy clean; **9/9 acceptance gates pass**. |
 | `server/` — FastAPI backend | REST + WebSocket exposing the core; typed Pydantic contracts; fuzz-safe ingestion; serves the built frontend offline. 12 API tests. |
-| `app/` — React + TypeScript console | Instrument-grade dark console: MRU → H(f) → rainflow/S-N/Miner → posterior → decision, with the signature contracting posterior fan, live spectra, RBI + fleet economics, and an in-app validation view. Bespoke SVG charts, custom design system. |
+| `app/` — React + TypeScript console | Instrument-grade dark console: MRU → H(f) → rainflow/S-N/Miner → posterior → decision, with the signature contracting posterior fan, live spectra, RBI + fleet economics, run history (browse/re-open persisted runs), provenance export, and an in-app validation view. Bespoke SVG charts, custom design system. |
+| Persistence | Local SQLite results store; every run auto-persisted and reproducible from an exported provenance bundle. |
+| `packaging/` — desktop build + installer | **PyInstaller standalone offline app** (`SCR-Twin.exe`) — bundles Python/SciPy/FastAPI + the console; no Python/Node/network needed. Wrapped into an **Inno Setup `Setup.exe`** (per-user, Start-menu/desktop shortcuts, uninstaller). Verified: bundle boots + 9/9 gates + full analysis offline; installer silent-installs and uninstalls cleanly. |
 
 Architecture note: the spec recommends a Tauri desktop shell (Option A). This
-build uses **FastAPI + React served as one offline process** (spec Option C,
-"reliability wins") because the Rust/Tauri toolchain is not provisioned here; the
-core/server/app separation lets a Tauri wrapper be added later without touching
-the physics.
+build ships a **PyInstaller standalone app** (spec's "reliability wins" fallback)
+because the Windows MSVC C++ build tools that Tauri/cargo require are not
+provisioned here (see [packaging/README.md](packaging/README.md) to enable the
+native Tauri shell later). The core/server/app separation lets a Tauri wrapper be
+added without touching the physics.
 
 ## Architecture
 
@@ -28,6 +31,7 @@ the physics.
 core/                 pure, tested physics (no UI deps)  ── scr_twin_core
 server/               FastAPI backend over the core (REST + WebSocket)
 app/                  React + TypeScript console (bespoke SVG charts, dark HMI)
+streamlit_app.py      shareable Streamlit console (Plotly) over the same core
 data/samples/         badged SYNTHETIC sample MRU + generator
 .github/workflows/    CI: pytest (core+api) + ruff + mypy + gates + frontend build
 run.ps1               one-command launcher
@@ -45,6 +49,13 @@ offline at <http://127.0.0.1:8000>:
 ```powershell
 ./run.ps1            # production: single process on :8000
 ./run.ps1 -Dev       # dev: backend :8000 + Vite HMR on :5173
+```
+
+Or build the **standalone desktop app** (double-clickable `SCR-Twin.exe`, no
+Python/Node/network) — see [packaging/README.md](packaging/README.md):
+
+```powershell
+./packaging/build_desktop.ps1        # -> dist/SCR-Twin/SCR-Twin.exe
 ```
 
 Manual / cross-platform:
@@ -68,6 +79,23 @@ python data/samples/generate_sample_mru.py   # regenerate the sample dataset
 
 See [core/README.md](core/README.md) for the module map, physics references, and
 how to plug in real MRU data and a project-specific transfer function.
+
+## Shareable web app (Streamlit)
+
+A second front-end for sharing a live link — same tested core, so the numbers are
+identical to the desktop console (it reuses `server.service`, no re-implementation).
+
+```bash
+pip install -r requirements.txt          # streamlit + plotly + core deps
+streamlit run streamlit_app.py           # opens http://localhost:8501
+```
+
+**Deploy (free, public link):** push this repo to GitHub, go to
+[share.streamlit.io](https://share.streamlit.io), and point it at
+`streamlit_app.py`. `requirements.txt` and `.streamlit/config.toml` are already
+set up; the physics core is imported from `./core` on `sys.path`, so nothing else
+needs configuring. The app is fully reactive (JONSWAP/upload → posterior →
+inspection → economics) with a downloadable provenance bundle.
 
 ## Acceptance gates (spec §5)
 

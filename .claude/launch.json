@@ -6,6 +6,12 @@
       "runtimeExecutable": "C:\\Users\\hp\\OneDrive\\Desktop\\SREERAG1\\INNOVATIONS\\scr-fatigue\\.venv\\Scripts\\python.exe",
       "runtimeArgs": ["-m", "uvicorn", "server.main:app", "--host", "127.0.0.1", "--port", "8000"],
       "port": 8000
+    },
+    {
+      "name": "scr-twin-streamlit",
+      "runtimeExecutable": "C:\\Users\\hp\\OneDrive\\Desktop\\SREERAG1\\INNOVATIONS\\scr-fatigue\\.venv\\Scripts\\python.exe",
+      "runtimeArgs": ["-m", "streamlit", "run", "streamlit_app.py", "--server.port", "8501", "--server.headless", "true", "--server.address", "127.0.0.1"],
+      "port": 8501
     }
   ]
 }
