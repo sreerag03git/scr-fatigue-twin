@@ -9,6 +9,9 @@ from __future__ import annotations
 
 import asyncio
 import io
+import json
+import os
+import sys
 import uuid
 from pathlib import Path
 from typing import Any
@@ -17,7 +20,7 @@ import numpy as np
 import scipy
 from fastapi import FastAPI, File, HTTPException, UploadFile, WebSocket, WebSocketDisconnect
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import JSONResponse
+from fastapi.responses import JSONResponse, Response
 from fastapi.staticfiles import StaticFiles
 
 from scr_twin_core import __version__ as core_version
@@ -35,8 +38,39 @@ from .schemas import (
     HealthResponse,
     SyntheticParams,
 )
+from .store import RunStore
+
+
+def _resource_base() -> Path:
+    """Root for bundled resources (repo root normally; _MEIPASS when frozen)."""
+    if getattr(sys, "frozen", False):  # PyInstaller bundle
+        return Path(getattr(sys, "_MEIPASS", Path(sys.executable).parent))
+    return Path(__file__).resolve().parents[1]
+
+
+def _data_dir() -> Path:
+    """Writable location for the results DB (user-data dir when frozen)."""
+    if getattr(sys, "frozen", False):
+        base = Path(os.environ.get("LOCALAPPDATA", Path.home())) / "SCR-Twin"
+        base.mkdir(parents=True, exist_ok=True)
+        return base
+    return _resource_base() / "data"
+
 
 app = FastAPI(title="SCR Fatigue Digital Twin", version=core_version)
+
+# Local results store (spec §3). Path overridable via env for tests/packaging.
+_STORE = RunStore(os.environ.get("SCR_TWIN_DB", str(_data_dir() / "runs.sqlite")))
+
+
+def _persist(source: dict[str, Any], config: dict[str, Any], payload: dict[str, Any]) -> dict[str, Any]:
+    """Attach source metadata, save the run, and return the payload with run_id."""
+    payload["source"] = source
+    try:
+        payload["run_id"] = _STORE.save(source=str(source.get("kind", "?")), config=config, payload=payload)
+    except Exception:  # noqa: BLE001 - persistence must never break the response
+        payload["run_id"] = None
+    return payload
 
 app.add_middleware(
     CORSMiddleware,
@@ -100,7 +134,8 @@ def analyze_synthetic(req: AnalyzeSyntheticRequest) -> dict[str, Any]:
     try:
         s: SyntheticParams = req.synthetic
         heave, fs = service.make_synthetic(s.hs, s.tp, s.gamma, s.duration, s.fs, s.seed)
-        return service.analyze(req.config, heave, fs, is_synthetic=True)
+        payload = service.analyze(req.config, heave, fs, is_synthetic=True)
+        return _persist({"kind": "synthetic", **s.model_dump()}, req.config.model_dump(), payload)
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
 
@@ -137,12 +172,55 @@ def analyze_upload(req: AnalyzeUploadRequest) -> dict[str, Any]:
             detail="Ingested record is not analysable: " + "; ".join(rec.health.flags),
         )
     try:
-        return service.analyze(
+        payload = service.analyze(
             req.config, rec.channels["heave"], rec.fs,
             is_synthetic=rec.is_synthetic, data_health=rec.health.as_dict(),
         )
+        return _persist({"kind": "upload", "channels": rec.health.channels}, req.config.model_dump(), payload)
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
+@app.get("/api/runs")
+def list_runs() -> dict[str, Any]:
+    return {"runs": _STORE.list(limit=50), "count": _STORE.count()}
+
+
+@app.get("/api/runs/{run_id}")
+def get_run(run_id: int) -> dict[str, Any]:
+    run = _STORE.get(run_id)
+    if run is None:
+        raise HTTPException(status_code=404, detail=f"Run {run_id} not found")
+    return run
+
+
+@app.get("/api/runs/{run_id}/export")
+def export_run(run_id: int) -> Response:
+    """Download a self-contained, reproducible provenance bundle for a run."""
+    run = _STORE.get(run_id)
+    if run is None:
+        raise HTTPException(status_code=404, detail=f"Run {run_id} not found")
+    bundle = {
+        "run_id": run["id"],
+        "created_at": run["created_at"],
+        "source": run["payload"].get("source"),
+        "config": run["config"],
+        "provenance": run["payload"].get("provenance"),
+        "summary": {
+            "sea_state": run["payload"].get("sea_state"),
+            "damage": run["payload"].get("damage"),
+            "posterior": {k: run["payload"]["posterior"].get(k) for k in ("p10", "p50", "p90", "n_members")},
+            "inspection": run["payload"].get("inspection", {}).get("next_inspection_year"),
+            "economics": run["payload"].get("economics"),
+        },
+        "note": "Reproduce with identical config + seed; see provenance for library versions.",
+    }
+    body = json.dumps(bundle, indent=2)
+    return Response(
+        content=body,
+        media_type="application/json",
+        headers={"Content-Disposition": f'attachment; filename="scr-twin-run-{run_id}-provenance.json"'},
+    )
 
 
 @app.websocket("/ws/stream")
@@ -191,6 +269,6 @@ async def _unhandled(_: Any, exc: Exception) -> JSONResponse:  # pragma: no cove
 
 
 # Serve the built frontend (offline, single process) when present.
-_DIST = Path(__file__).resolve().parents[1] / "app" / "dist"
+_DIST = _resource_base() / "app" / "dist"
 if _DIST.exists():
     app.mount("/", StaticFiles(directory=str(_DIST), html=True), name="app")

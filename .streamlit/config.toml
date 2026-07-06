@@ -1,0 +1,14 @@
+# Instrument-grade dark theme for the shareable Streamlit console.
+[theme]
+base = "dark"
+primaryColor = "#33b7c4"
+backgroundColor = "#0a0e11"
+secondaryBackgroundColor = "#0e1418"
+textColor = "#c4d2db"
+font = "sans serif"
+
+[server]
+headless = true
+
+[browser]
+gatherUsageStats = false

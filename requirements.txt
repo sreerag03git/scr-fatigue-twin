@@ -1,0 +1,10 @@
+# Streamlit Community Cloud entrypoint deps (for streamlit_app.py).
+# scr_twin_core is imported from ./core via sys.path, so it is NOT installed
+# here — only its runtime dependencies plus the Streamlit UI stack are listed.
+streamlit>=1.38
+plotly>=5.24
+numpy>=1.26
+scipy>=1.11
+pydantic>=2.5
+pandas>=2.2
+pyarrow>=17
