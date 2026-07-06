@@ -11,6 +11,7 @@ import asyncio
 import io
 import json
 import os
+import sys
 import uuid
 from pathlib import Path
 from typing import Any
@@ -39,10 +40,27 @@ from .schemas import (
 )
 from .store import RunStore
 
+
+def _resource_base() -> Path:
+    """Root for bundled resources (repo root normally; _MEIPASS when frozen)."""
+    if getattr(sys, "frozen", False):  # PyInstaller bundle
+        return Path(getattr(sys, "_MEIPASS", Path(sys.executable).parent))
+    return Path(__file__).resolve().parents[1]
+
+
+def _data_dir() -> Path:
+    """Writable location for the results DB (user-data dir when frozen)."""
+    if getattr(sys, "frozen", False):
+        base = Path(os.environ.get("LOCALAPPDATA", Path.home())) / "SCR-Twin"
+        base.mkdir(parents=True, exist_ok=True)
+        return base
+    return _resource_base() / "data"
+
+
 app = FastAPI(title="SCR Fatigue Digital Twin", version=core_version)
 
 # Local results store (spec §3). Path overridable via env for tests/packaging.
-_STORE = RunStore(os.environ.get("SCR_TWIN_DB", str(Path(__file__).resolve().parents[1] / "data" / "runs.sqlite")))
+_STORE = RunStore(os.environ.get("SCR_TWIN_DB", str(_data_dir() / "runs.sqlite")))
 
 
 def _persist(source: dict[str, Any], config: dict[str, Any], payload: dict[str, Any]) -> dict[str, Any]:
@@ -251,6 +269,6 @@ async def _unhandled(_: Any, exc: Exception) -> JSONResponse:  # pragma: no cove
 
 
 # Serve the built frontend (offline, single process) when present.
-_DIST = Path(__file__).resolve().parents[1] / "app" / "dist"
+_DIST = _resource_base() / "app" / "dist"
 if _DIST.exists():
     app.mount("/", StaticFiles(directory=str(_DIST), html=True), name="app")
