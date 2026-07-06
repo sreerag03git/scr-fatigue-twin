@@ -14,13 +14,16 @@ Using Existing FPSO Motion Reference Unit Data."*
 |-----------|-------|
 | `core/` — `scr_twin_core` physics package | **Complete**: spectral, catenary/Morison `H(f)`, rainflow, S-N, Miner, spectral-damage, environment, Monte Carlo, Bayesian, ingestion, decision/economics, config, full-chain pipeline, validation. ~180 pytest tests, ruff + mypy clean; **9/9 acceptance gates pass**. |
 | `server/` — FastAPI backend | REST + WebSocket exposing the core; typed Pydantic contracts; fuzz-safe ingestion; serves the built frontend offline. 12 API tests. |
-| `app/` — React + TypeScript console | Instrument-grade dark console: MRU → H(f) → rainflow/S-N/Miner → posterior → decision, with the signature contracting posterior fan, live spectra, RBI + fleet economics, and an in-app validation view. Bespoke SVG charts, custom design system. |
+| `app/` — React + TypeScript console | Instrument-grade dark console: MRU → H(f) → rainflow/S-N/Miner → posterior → decision, with the signature contracting posterior fan, live spectra, RBI + fleet economics, run history (browse/re-open persisted runs), provenance export, and an in-app validation view. Bespoke SVG charts, custom design system. |
+| Persistence | Local SQLite results store; every run auto-persisted and reproducible from an exported provenance bundle. |
+| `packaging/` — desktop build | **PyInstaller standalone offline app** (`SCR-Twin.exe`) — bundles Python/SciPy/FastAPI + the console; no Python/Node/network needed. Verified: boots, 9/9 gates, full analysis, offline. |
 
 Architecture note: the spec recommends a Tauri desktop shell (Option A). This
-build uses **FastAPI + React served as one offline process** (spec Option C,
-"reliability wins") because the Rust/Tauri toolchain is not provisioned here; the
-core/server/app separation lets a Tauri wrapper be added later without touching
-the physics.
+build ships a **PyInstaller standalone app** (spec's "reliability wins" fallback)
+because the Windows MSVC C++ build tools that Tauri/cargo require are not
+provisioned here (see [packaging/README.md](packaging/README.md) to enable the
+native Tauri shell later). The core/server/app separation lets a Tauri wrapper be
+added without touching the physics.
 
 ## Architecture
 
@@ -45,6 +48,13 @@ offline at <http://127.0.0.1:8000>:
 ```powershell
 ./run.ps1            # production: single process on :8000
 ./run.ps1 -Dev       # dev: backend :8000 + Vite HMR on :5173
+```
+
+Or build the **standalone desktop app** (double-clickable `SCR-Twin.exe`, no
+Python/Node/network) — see [packaging/README.md](packaging/README.md):
+
+```powershell
+./packaging/build_desktop.ps1        # -> dist/SCR-Twin/SCR-Twin.exe
 ```
 
 Manual / cross-platform:

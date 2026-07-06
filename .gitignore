@@ -10,6 +10,8 @@ build/
 dist/
 .coverage
 htmlcov/
+# PyInstaller (build script writes flags; generated spec is an artifact)
+/SCR-Twin.spec
 
 # Node / frontend (future app)
 node_modules/
