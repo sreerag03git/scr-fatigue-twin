@@ -1,6 +1,7 @@
 import { useEffect } from "react";
 import "./styles/layout.css";
 import { useStore } from "./state/store";
+import { LoadingScreen } from "./components/LoadingScreen";
 import { ConfigPanel } from "./components/panels/ConfigPanel";
 import { DamagePanel } from "./components/panels/DamagePanel";
 import { DecisionPanel } from "./components/panels/DecisionPanel";
@@ -14,7 +15,7 @@ import { TracePanel } from "./components/panels/TracePanel";
 import { ValidationPanel } from "./components/panels/ValidationPanel";
 
 export default function App() {
-  const { boot, booted, bootError } = useStore();
+  const { boot, bootError } = useStore();
   useEffect(() => {
     boot();
   }, [boot]);
@@ -60,11 +61,7 @@ export default function App() {
         </div>
       </main>
       <StatusBar />
-      {!booted && (
-        <div className="boot-veil">
-          <div className="boot-veil__spinner" /> Initialising physics core…
-        </div>
-      )}
+      <LoadingScreen />
     </div>
   );
 }
