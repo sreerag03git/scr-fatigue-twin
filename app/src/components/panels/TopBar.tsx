@@ -1,3 +1,4 @@
+import { api } from "../../api/client";
 import { useStore } from "../../state/store";
 import { Badge } from "../ui";
 
@@ -5,6 +6,7 @@ export function TopBar() {
   const { result, status, run, validation, theme, toggleTheme } = useStore();
   const synthetic = result?.provenance.motion_is_synthetic ?? true;
   const gatesOk = validation ? validation.passed === validation.total : false;
+  const runId = result?.run_id ?? null;
 
   return (
     <header className="topbar">
@@ -42,6 +44,14 @@ export function TopBar() {
         </Badge>
         <button className="btn btn--ghost btn--sm" onClick={toggleTheme} title="Toggle report theme">
           {theme === "dark" ? "Report" : "Console"}
+        </button>
+        <button
+          className="btn btn--ghost btn--sm"
+          onClick={() => runId != null && api.exportRun(runId)}
+          disabled={runId == null}
+          title="Download reproducible provenance bundle (config, seed, versions)"
+        >
+          Export
         </button>
         <button className="btn btn--primary" onClick={run} disabled={status === "loading"}>
           {status === "loading" ? "Computing…" : "Run analysis"}

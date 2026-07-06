@@ -65,4 +65,14 @@ export const api = {
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ config, token }),
     }),
+
+  // Trigger a browser download of the reproducible provenance bundle for a run.
+  exportRun: (runId: number) => {
+    const a = document.createElement("a");
+    a.href = `/api/runs/${runId}/export`;
+    a.download = `scr-twin-run-${runId}-provenance.json`;
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+  },
 };

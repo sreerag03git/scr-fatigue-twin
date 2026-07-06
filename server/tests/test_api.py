@@ -105,3 +105,41 @@ def test_invalid_config_rejected(config):
     bad = {**config, "riser": {**config["riser"], "wall_thickness": 5.0}}  # t > OD/2
     r = client.post("/api/analyze/synthetic", json={"config": bad, "synthetic": {}})
     assert r.status_code == 422  # pydantic validation error
+
+
+def test_run_is_persisted_and_listed(config):
+    body = {"config": config, "synthetic": {"hs": 3.5, "tp": 10.0, "gamma": 2.0, "duration": 1200, "fs": 4.0, "seed": 3}}
+    run_id = client.post("/api/analyze/synthetic", json=body).json()["run_id"]
+    assert isinstance(run_id, int)
+
+    runs = client.get("/api/runs").json()
+    assert runs["count"] >= 1
+    assert any(row["id"] == run_id for row in runs["runs"])
+
+
+def test_get_run_returns_config_and_payload(config):
+    body = {"config": config, "synthetic": {"hs": 3.0, "tp": 9.0, "gamma": 1.5, "duration": 1200, "fs": 4.0, "seed": 4}}
+    run_id = client.post("/api/analyze/synthetic", json=body).json()["run_id"]
+
+    run = client.get(f"/api/runs/{run_id}").json()
+    assert run["config"]["riser"]["sn_class"] == config["riser"]["sn_class"]
+    assert run["payload"]["posterior"]["p50"] > 0
+
+
+def test_export_is_downloadable_provenance_bundle(config):
+    body = {"config": config, "synthetic": {"hs": 4.0, "tp": 11.0, "gamma": 2.5, "duration": 1200, "fs": 4.0, "seed": 5}}
+    run_id = client.post("/api/analyze/synthetic", json=body).json()["run_id"]
+
+    r = client.get(f"/api/runs/{run_id}/export")
+    assert r.status_code == 200
+    assert "attachment" in r.headers["content-disposition"]
+    bundle = r.json()
+    # Reproducible: the seed + config are present in the export.
+    assert bundle["config"]["seed"] == config["seed"]
+    assert bundle["provenance"]["config_sha256"]
+    assert bundle["source"]["kind"] == "synthetic"
+
+
+def test_get_missing_run_404():
+    assert client.get("/api/runs/999999").status_code == 404
+    assert client.get("/api/runs/999999/export").status_code == 404
