@@ -5,6 +5,7 @@ import { ConfigPanel } from "./components/panels/ConfigPanel";
 import { DamagePanel } from "./components/panels/DamagePanel";
 import { DecisionPanel } from "./components/panels/DecisionPanel";
 import { PosteriorPanel } from "./components/panels/PosteriorPanel";
+import { RunHistoryPanel } from "./components/panels/RunHistoryPanel";
 import { SeaStatePanel } from "./components/panels/SeaStatePanel";
 import { SourcePanel } from "./components/panels/SourcePanel";
 import { StatusBar } from "./components/panels/StatusBar";
@@ -43,6 +44,7 @@ export default function App() {
         <aside className="rail">
           <SourcePanel />
           <ConfigPanel />
+          <RunHistoryPanel />
         </aside>
         <div className="stage">
           <div className="stage__row2">

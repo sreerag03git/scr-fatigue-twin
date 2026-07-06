@@ -6,7 +6,9 @@ import type {
   AnalyzeResponse,
   FleetEconomics,
   IngestResponse,
+  RunListResponse,
   SNClass,
+  StoredRun,
   SyntheticParams,
   ValidationResponse,
 } from "./types";
@@ -65,6 +67,9 @@ export const api = {
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ config, token }),
     }),
+
+  runs: () => req<RunListResponse>("/api/runs"),
+  getRun: (id: number) => req<StoredRun>(`/api/runs/${id}`),
 
   // Trigger a browser download of the reproducible provenance bundle for a run.
   exportRun: (runId: number) => {

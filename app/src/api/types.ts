@@ -133,3 +133,30 @@ export interface IngestResponse {
   health: DataHealth;
   preview: { time: number[]; heave: number[] };
 }
+
+export interface RunSummary {
+  id: number;
+  created_at: string;
+  source: string;
+  is_synthetic: number;
+  config_sha: string;
+  det_life: number | null;
+  life_p10: number | null;
+  life_p50: number | null;
+  life_p90: number | null;
+  next_insp: number | null;
+}
+
+export interface RunListResponse {
+  runs: RunSummary[];
+  count: number;
+}
+
+export interface StoredRun {
+  id: number;
+  created_at: string;
+  source: string;
+  is_synthetic: number;
+  config: AnalysisConfig;
+  payload: AnalyzeResponse;
+}

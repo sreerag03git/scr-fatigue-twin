@@ -71,6 +71,34 @@
 .gates__status { width: 18px; }
 .gates__name { font-size: 12px; color: var(--text-hi); white-space: nowrap; }
 .gates__actual { font-size: 10.5px; color: var(--text-lo); text-align: right; }
+
+/* Run history */
+.runlist { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; max-height: 232px; overflow-y: auto; }
+.runrow { display: flex; align-items: stretch; border-bottom: 1px solid var(--line); }
+.runrow:last-child { border-bottom: 0; }
+.runrow--active { background: var(--bg-2); box-shadow: inset 2px 0 0 var(--signal); }
+.runrow--active .runrow__id { color: var(--signal); }
+.runrow__main {
+  flex: 1; min-width: 0; display: grid; grid-template-columns: 32px 42px 1fr auto;
+  align-items: center; gap: 8px; padding: 6px 6px; background: none; border: 0;
+  cursor: pointer; text-align: left; color: var(--text-hi);
+}
+.runrow__main:hover { background: var(--bg-2); }
+.runrow__id { font-size: 11px; color: var(--text-lo); }
+.runrow__tag {
+  font-size: 9px; letter-spacing: 0.06em; padding: 1px 0; border-radius: 3px;
+  border: 1px solid var(--line-2); text-align: center;
+}
+.runrow__tag--syn { color: var(--amber); border-color: var(--amber-dim); }
+.runrow__tag--real { color: var(--signal); border-color: var(--signal-dim); }
+.runrow__life { font-size: 12.5px; }
+.runrow__life em { font-style: normal; font-size: 9px; color: var(--text-lo); margin-left: 3px; }
+.runrow__time { font-size: 10px; color: var(--text-lo); white-space: nowrap; }
+.runrow__exp {
+  width: 26px; background: none; border: 0; border-left: 1px solid var(--line);
+  color: var(--text-lo); cursor: pointer; font-size: 14px;
+}
+.runrow__exp:hover { color: var(--signal); background: var(--bg-2); }
 .gatedot { display: inline-block; width: 8px; height: 8px; border-radius: 50%; }
 .gatedot--ok { background: var(--good); box-shadow: 0 0 6px var(--good); }
 .gatedot--bad { background: var(--alarm); box-shadow: 0 0 6px var(--alarm); }
