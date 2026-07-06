@@ -103,6 +103,8 @@ export interface AnalyzeResponse {
   provenance: Provenance;
   data_health: DataHealth | null;
   trace: { time: number[]; heave: number[] };
+  run_id: number | null;
+  source?: { kind: string; [k: string]: unknown };
 }
 
 export interface FleetEconomics {
