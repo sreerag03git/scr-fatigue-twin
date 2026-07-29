@@ -1,5 +1,18 @@
 # SCR Fatigue Digital Twin
 
+> **Looking for TideTwin?** It moved to its own repository:
+> **https://github.com/sreerag03git/tidetwin**
+>
+> TideTwin is a separate application — an adversarial test bench for the claims of
+> a tidal-calibration fatigue digital twin for offshore *jackets*. It was
+> developed here as `tidetwin/` and split out with its history intact, because it
+> needs `requirements.txt` and `runtime.txt` at a repository root to deploy on
+> Streamlit Cloud without colliding with this project's own dependencies.
+> Its history in this repository ends at commit `1b1b7ca`.
+
+---
+
+
 A physics-based digital twin that turns an FPSO/floating unit's existing **Motion
 Reference Unit (MRU)** recordings into a continuously updated, probabilistic
 estimate of **steel catenary riser (SCR)** fatigue life at the touchdown point
