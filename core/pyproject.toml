@@ -14,7 +14,14 @@ dependencies = [
     "numpy>=1.26",
     "scipy>=1.11",
     "pydantic>=2.5",
-    "pandas>=2.2",
+    # Upper bound is load-bearing, not tidiness. pandas 3 made PyArrow-backed
+    # strings the default storage, and that path segfaults in CI on the
+    # resolved pyarrow: the API job died with SIGSEGV inside
+    # pandas.core.arrays.string_arrow._from_sequence, reading the MRU CSV in
+    # ingest.load_mru_csv. Not a test failure - a core dump, so nothing was
+    # reported. This code was written against pandas 2.x; supporting 3.x is
+    # real work rather than a version bump, and belongs in its own change.
+    "pandas>=2.2,<3",
     "pyarrow>=17",
 ]
 
