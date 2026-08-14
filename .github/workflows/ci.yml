@@ -47,7 +47,11 @@ jobs:
           python-version: "3.12"
       - name: Install core + server
         run: |
-          python -m pip install -e core
+          # The [test] extra is what brings pytest in. Installing plain `core`
+          # here meant the next step died with "pytest: command not found", so
+          # this job was never running the API tests it reports on - it was only
+          # failing to start them. The core job above installs "core[test,dev]".
+          python -m pip install -e "core[test]"
           python -m pip install -r server/requirements.txt
       - name: API tests (fuzz + contract + determinism)
         run: pytest server/tests -q
