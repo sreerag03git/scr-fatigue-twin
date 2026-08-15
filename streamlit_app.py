@@ -182,8 +182,14 @@ def _fig(height: int) -> go.Figure:
 
 def spectra_fig(spec: dict) -> go.Figure:
     f = _fig(250)
-    f.add_scatter(x=spec["freq"], y=spec["motion_psd"], line=dict(color=SIGNAL, width=1.8), yaxis="y")
-    f.add_scatter(x=spec["freq"], y=spec["stress_psd"], line=dict(color=AMBER, width=1.8), yaxis="y2")
+    # Floor the PSDs before the log axes: a genuine zero in the spectrum maps to
+    # log(0) = -inf, which Plotly then tries to place a <text> label at and throws
+    # "<text> attribute y: -Infinity" for. Same 1e-12 floor the PDF's matplotlib
+    # spectra already uses, so the two renderings agree.
+    motion = np.clip(spec["motion_psd"], 1e-12, None)
+    stress = np.clip(spec["stress_psd"], 1e-12, None)
+    f.add_scatter(x=spec["freq"], y=motion, line=dict(color=SIGNAL, width=1.8), yaxis="y")
+    f.add_scatter(x=spec["freq"], y=stress, line=dict(color=AMBER, width=1.8), yaxis="y2")
     f.update_layout(
         xaxis=dict(title="Frequency [Hz]", gridcolor=GRID, zeroline=False, range=[0, 0.4]),
         yaxis=dict(title="motion [m^2/Hz]", type="log", gridcolor=GRID, color=SIGNAL, zeroline=False),
