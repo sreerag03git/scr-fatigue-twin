@@ -367,7 +367,10 @@ def build_pdf(config_json: str, source_kind: str, payload_json: str) -> bytes:
 
     section("Validation gates (spec section 5)")
     for x in g:
-        pdf.set_text_color(31, 138, 91) if x["passed"] else pdf.set_text_color(195, 61, 40)
+        if x["passed"]:
+            pdf.set_text_color(31, 138, 91)
+        else:
+            pdf.set_text_color(195, 61, 40)
         pdf.cell(8, 5, "PASS" if x["passed"] else "FAIL")
         pdf.set_text_color(40, 55, 65)
         pdf.cell(62, 5, x["name"][:38])
