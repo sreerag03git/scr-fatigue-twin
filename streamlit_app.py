@@ -109,6 +109,16 @@ st.markdown(
         box-shadow:0 0 0 0 rgba(195,61,40,.5); animation:pulse 1.1s infinite; }
       @keyframes pulse { 0%{box-shadow:0 0 0 0 rgba(195,61,40,.45);} 70%{box-shadow:0 0 0 7px rgba(195,61,40,0);} 100%{box-shadow:0 0 0 0 rgba(195,61,40,0);} }
       .livestatus { font-family:monospace; font-size:12.5px; color:#3f515c; margin:2px 0 6px; }
+      /* Floating, always-visible view toggle so the mobile/desktop switch is never
+         lost above the hero or tucked into a corner column. Streamlit tags the
+         keyed button's container .st-key-view_toggle. */
+      .st-key-view_toggle { position:fixed !important; bottom:20px; right:20px;
+        width:auto !important; z-index:1000; margin:0 !important; }
+      .st-key-view_toggle button { border-radius:22px !important; padding:9px 18px !important;
+        background:#0f8f9c !important; color:#ffffff !important; border:none !important;
+        font-weight:600 !important; box-shadow:0 6px 20px rgba(15,143,156,0.40) !important;
+        min-height:0 !important; }
+      .st-key-view_toggle button:hover { background:#0b7079 !important; color:#ffffff !important; }
     </style>
     """,
     unsafe_allow_html=True,
