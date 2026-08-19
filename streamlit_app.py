@@ -46,11 +46,17 @@ GRID, TEXT, TEXTHI, PAPER = "#dce4e8", "#3f515c", "#1a2830", "rgba(0,0,0,0)"
 GOOD = "#1f8a5b"
 SN_CLASSES = ["B1", "B2", "C", "C1", "C2", "D", "E", "F", "F1", "F3", "G"]
 
+# Mobile mode is read *before* the first render command so the page layout and
+# sidebar state can flip between desktop (wide, multi-column) and mobile
+# (centered, single-column, collapsed sidebar).
+st.session_state.setdefault("mobile", False)
+MOBILE = bool(st.session_state["mobile"])
+
 st.set_page_config(
     page_title="SCR-Twin - TDP Fatigue Integrity Console",
     page_icon="📈",
-    layout="wide",
-    initial_sidebar_state="expanded",
+    layout="centered" if MOBILE else "wide",
+    initial_sidebar_state="collapsed" if MOBILE else "expanded",
 )
 
 st.markdown(
@@ -107,6 +113,64 @@ st.markdown(
     """,
     unsafe_allow_html=True,
 )
+
+# Mobile-mode responsive overrides (single column, tap-friendly, compact). On a
+# real phone this just fills the screen; on a wide screen the media query below
+# wraps the content in a centred phone-width device frame so desktop viewers see
+# the handset experience rather than a stretched single column.
+if MOBILE:
+    st.markdown(
+        """
+        <style>
+          .block-container { padding: 0.8rem 0.7rem 3rem !important; max-width: 100% !important; }
+          .land { margin-top: 0; } .land h1 { font-size: 30px; letter-spacing:.1em; }
+          .land .tagline { font-size: 11px; } .land .lede { font-size: 13.5px; }
+          .flowcard { width: 100% !important; }
+          .kpi-row { grid-template-columns: repeat(2, 1fr) !important; gap: 8px; }
+          .kpi .val { font-size: 19px; } .kpi { padding: 9px 11px; }
+          .brand h1 { font-size: 22px; } .sec { font-size: 10.5px; }
+          .stButton button { min-height: 46px; font-size: 15px; }
+          section[data-testid="stSidebar"] { min-width: 84vw !important; }
+
+          /* Desktop viewers: render the mobile layout inside a phone chassis. */
+          @media (min-width: 720px) {
+            [data-testid="stMainBlockContainer"], .block-container {
+              max-width: 430px !important;
+              margin: 26px auto 46px !important;
+              padding: 18px 17px 40px !important;
+              background: #f4f7f8 !important;
+              border: 1px solid #cfd8dd !important;
+              border-radius: 40px !important;
+              box-shadow: 0 0 0 11px #e7ecee, 0 26px 62px rgba(20,40,55,0.22) !important;
+              min-height: 80vh !important;
+            }
+            /* speaker pill, so the frame reads as a handset */
+            [data-testid="stMainBlockContainer"]::before, .block-container::before {
+              content: ""; display: block; width: 46px; height: 5px; border-radius: 3px;
+              background: #c4ced4; margin: 0 auto 14px !important;
+            }
+            /* keep the drawer phone-sized instead of 84vw of the desktop */
+            section[data-testid="stSidebar"] { min-width: 360px !important; width: 360px !important; }
+          }
+        </style>
+        """,
+        unsafe_allow_html=True,
+    )
+
+# View toggle (mobile / desktop) - available on every page, top-right.
+_tcols = st.columns([1, 1]) if MOBILE else st.columns([5, 1])
+with _tcols[-1]:
+    if st.button("🖥  Desktop view" if MOBILE else "📱  Mobile view", key="view_toggle",
+                 width="stretch",
+                 help="Reflow the interface for phones and tablets: single column, collapsed sidebar."):
+        st.session_state["mobile"] = not MOBILE
+        st.rerun()
+
+
+def dcols(spec: list[int]) -> list:
+    """Streamlit columns on desktop; stacked full-width containers on mobile."""
+    return [st.container() for _ in spec] if MOBILE else list(st.columns(spec))
+
 
 # Session flow: landing -> console; ran gates the dashboard.
 st.session_state.setdefault("launched", False)
@@ -182,8 +246,14 @@ def _fig(height: int) -> go.Figure:
 
 def spectra_fig(spec: dict) -> go.Figure:
     f = _fig(250)
-    f.add_scatter(x=spec["freq"], y=spec["motion_psd"], line=dict(color=SIGNAL, width=1.8), yaxis="y")
-    f.add_scatter(x=spec["freq"], y=spec["stress_psd"], line=dict(color=AMBER, width=1.8), yaxis="y2")
+    # Floor the PSDs before the log axes: a genuine zero in the spectrum maps to
+    # log(0) = -inf, which Plotly then tries to place a <text> label at and throws
+    # "<text> attribute y: -Infinity" for. Same 1e-12 floor the PDF's matplotlib
+    # spectra already uses, so the two renderings agree.
+    motion = np.clip(spec["motion_psd"], 1e-12, None)
+    stress = np.clip(spec["stress_psd"], 1e-12, None)
+    f.add_scatter(x=spec["freq"], y=motion, line=dict(color=SIGNAL, width=1.8), yaxis="y")
+    f.add_scatter(x=spec["freq"], y=stress, line=dict(color=AMBER, width=1.8), yaxis="y2")
     f.update_layout(
         xaxis=dict(title="Frequency [Hz]", gridcolor=GRID, zeroline=False, range=[0, 0.4]),
         yaxis=dict(title="motion [m^2/Hz]", type="log", gridcolor=GRID, color=SIGNAL, zeroline=False),
@@ -367,7 +437,10 @@ def build_pdf(config_json: str, source_kind: str, payload_json: str) -> bytes:
 
     section("Validation gates (spec section 5)")
     for x in g:
-        pdf.set_text_color(31, 138, 91) if x["passed"] else pdf.set_text_color(195, 61, 40)
+        if x["passed"]:
+            pdf.set_text_color(31, 138, 91)
+        else:
+            pdf.set_text_color(195, 61, 40)
         pdf.cell(8, 5, "PASS" if x["passed"] else "FAIL")
         pdf.set_text_color(40, 55, 65)
         pdf.cell(62, 5, x["name"][:38])
@@ -418,7 +491,7 @@ def render_landing() -> None:
         + '</div></div>',
         unsafe_allow_html=True,
     )
-    c = st.columns([2, 1, 2])[1]
+    c = st.container() if MOBILE else st.columns([2, 1, 2])[1]
     if c.button("Launch console  →", type="primary", width="stretch"):
         st.session_state.launched = True
         st.rerun()
@@ -501,7 +574,7 @@ is_synth = source.startswith("Synthetic")
 # --------------------------------------------------------------------------- #
 g = gates()
 gates_ok = sum(x["passed"] for x in g)
-head_l, head_r = st.columns([3, 2])
+head_l, head_r = dcols([3, 2])
 with head_l:
     st.markdown(
         '<div class="brand">'
@@ -519,7 +592,7 @@ with head_r:
         unsafe_allow_html=True,
     )
 
-run_col, _ = st.columns([1, 3])
+run_col, _ = dcols([1, 3])
 run_clicked = run_col.button("▶  Run analysis", type="primary", width="stretch",
                              help="Runs the full chain with a live, animated acquisition + posterior.")
 
@@ -665,7 +738,7 @@ st.markdown(kpi_row([
     kpi("Tz", f'{sea["tz"]:.1f}', "s"),
     kpi("gamma fit", f'{sea["gamma"]:.1f}'),
 ]), unsafe_allow_html=True)
-sc1, sc2 = st.columns([3, 2])
+sc1, sc2 = dcols([3, 2])
 sc1.plotly_chart(spectra_fig(payload["spectrum"]), width="stretch", config={"displayModeBar": False})
 tf = _fig(180)
 tf.add_scatter(x=payload["trace"]["time"], y=payload["trace"]["heave"], line=dict(color=SIGNAL, width=1))
@@ -684,12 +757,12 @@ st.markdown(kpi_row([
 st.markdown(
     f'<div class="sec">Layer 3 - remaining-life posterior &middot; {post["n_members"]:,} MC members &middot; '
     'Bayesian contraction (90% CI ~ 1/&radic;T)</div>', unsafe_allow_html=True)
-pc1, pc2 = st.columns([3, 2])
+pc1, pc2 = dcols([3, 2])
 pc1.plotly_chart(fan_fig(payload["bayesian_fan"], post["p50"]), width="stretch", config={"displayModeBar": False})
 pc2.plotly_chart(pdf_hist_fig(post), width="stretch", config={"displayModeBar": False})
 
 st.markdown('<div class="sec">Decision - risk-based inspection &middot; fleet economics</div>', unsafe_allow_html=True)
-dc1, dc2 = st.columns([3, 2])
+dc1, dc2 = dcols([3, 2])
 dc1.plotly_chart(pof_fig(insp), width="stretch", config={"displayModeBar": False})
 with dc2:
     st.markdown(kpi_row([
@@ -703,7 +776,7 @@ with dc2:
             "alarm" if insp["pof_at_next"] > insp["target_pof"] * 1.05 else ""),
     ]), unsafe_allow_html=True)
 
-vc1, vc2 = st.columns([3, 2])
+vc1, vc2 = dcols([3, 2])
 with vc1:
     st.markdown('<div class="sec">Validation gates (spec section 5)</div>', unsafe_allow_html=True)
     for x in g:
