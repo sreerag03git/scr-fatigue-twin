@@ -114,7 +114,10 @@ st.markdown(
     unsafe_allow_html=True,
 )
 
-# Mobile-mode responsive overrides (single column, tap-friendly, compact).
+# Mobile-mode responsive overrides (single column, tap-friendly, compact). On a
+# real phone this just fills the screen; on a wide screen the media query below
+# wraps the content in a centred phone-width device frame so desktop viewers see
+# the handset experience rather than a stretched single column.
 if MOBILE:
     st.markdown(
         """
@@ -128,6 +131,27 @@ if MOBILE:
           .brand h1 { font-size: 22px; } .sec { font-size: 10.5px; }
           .stButton button { min-height: 46px; font-size: 15px; }
           section[data-testid="stSidebar"] { min-width: 84vw !important; }
+
+          /* Desktop viewers: render the mobile layout inside a phone chassis. */
+          @media (min-width: 720px) {
+            [data-testid="stMainBlockContainer"], .block-container {
+              max-width: 430px !important;
+              margin: 26px auto 46px !important;
+              padding: 18px 17px 40px !important;
+              background: #f4f7f8 !important;
+              border: 1px solid #cfd8dd !important;
+              border-radius: 40px !important;
+              box-shadow: 0 0 0 11px #e7ecee, 0 26px 62px rgba(20,40,55,0.22) !important;
+              min-height: 80vh !important;
+            }
+            /* speaker pill, so the frame reads as a handset */
+            [data-testid="stMainBlockContainer"]::before, .block-container::before {
+              content: ""; display: block; width: 46px; height: 5px; border-radius: 3px;
+              background: #c4ced4; margin: 0 auto 14px !important;
+            }
+            /* keep the drawer phone-sized instead of 84vw of the desktop */
+            section[data-testid="stSidebar"] { min-width: 360px !important; width: 360px !important; }
+          }
         </style>
         """,
         unsafe_allow_html=True,
