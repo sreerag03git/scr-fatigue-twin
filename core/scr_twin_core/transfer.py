@@ -327,7 +327,7 @@ def load_transfer_csv(source: object, **overrides: object) -> InterpolatedTransf
 
     try:
         buf = io.StringIO(text) if text is not None else source
-        df = pd.read_csv(buf, comment="#", skip_blank_lines=True)  # type: ignore[arg-type]
+        df = pd.read_csv(buf, comment="#", skip_blank_lines=True)
     except Exception as exc:  # noqa: BLE001
         raise ValueError(f"could not parse transfer-function CSV: {exc}") from exc
     if df.empty:
