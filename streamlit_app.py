@@ -375,6 +375,40 @@ def pof_fig(insp: dict) -> go.Figure:
     return f
 
 
+def econ_fig(econ: dict) -> go.Figure:
+    """Fig 11(b): conditional net fleet value dC vs phi, with a P5-P95 cost band.
+
+    The sensor only pays where the curve is above zero - to the right of the
+    break-even phi*. The fleet's own (endogenous) phi is marked on the x-axis.
+    """
+    f = _fig(250)
+    phi = econ["phi_grid"]
+    p5 = [v / 1e6 for v in econ["fleet_delta_c_p5_usd"]]
+    p50 = [v / 1e6 for v in econ["fleet_delta_c_p50_usd"]]
+    p95 = [v / 1e6 for v in econ["fleet_delta_c_p95_usd"]]
+    f.add_scatter(x=phi, y=p95, line=dict(width=0), hoverinfo="skip")
+    f.add_scatter(x=phi, y=p5, fill="tonexty", line=dict(width=0),
+                  fillcolor="rgba(15,143,156,0.13)", hoverinfo="skip")
+    f.add_scatter(x=phi, y=p50, line=dict(color=SIGNAL2, width=2.4), name="net dC")
+    f.add_hline(y=0.0, line=dict(color=TEXT, width=0.9, dash="dot"))
+    be = econ.get("breakeven_phi")
+    if be is not None and np.isfinite(be):
+        f.add_vline(x=be, line=dict(color=ALARM, width=1.2, dash="dash"),
+                    annotation_text=f"break-even φ*={be:.2f}", annotation_font_color=ALARM,
+                    annotation_font_size=9, annotation_position="top left")
+    op = econ.get("phi")
+    if op is not None:
+        col = GOOD if econ.get("net_positive") else AMBER
+        f.add_vline(x=op, line=dict(color=col, width=1.6),
+                    annotation_text=f"fleet φ={op:.2f}", annotation_font_color=col,
+                    annotation_font_size=9, annotation_position="bottom right")
+    f.update_layout(
+        xaxis=dict(title="φ = P(asset ages slower than design)", gridcolor=GRID,
+                   zeroline=False, range=[0, 1]),
+        yaxis=dict(title="Net fleet value ΔC [US$M, 20yr]", gridcolor=GRID, zeroline=False))
+    return f
+
+
 # --------------------------------------------------------------------------- #
 # PDF report (matplotlib charts + fpdf2; ASCII text for the core fonts)
 # --------------------------------------------------------------------------- #
@@ -492,10 +526,12 @@ def build_pdf(config_json: str, source_kind: str, payload_json: str) -> bytes:
     ])
     pdf.ln(1)
     section("Decision")
+    _net = f"${econ['fleet_delta_c_usd']/1e6:+.1f}M ({econ['n_units']}u, {econ['horizon_yr']:.0f}yr)"
+    _phi_src = "posterior" if econ.get("phi_is_endogenous") else "break-even ref"
     kv([
         ("Next inspection", f"{insp['next_inspection_year']:.1f} yr  (target PoF {insp['target_pof']*100:.1f}%)"),
-        ("Fleet saving (20u, 20yr)", f"${econ['fleet_saving_low_usd']/1e6:.1f}M - ${econ['fleet_saving_high_usd']/1e6:.1f}M"),
-        ("Sensor payback", f"{econ['payback_low_yr']:.1f} - {econ['payback_high_yr']:.1f} yr"),
+        ("Conditional net value dC", f"{_net}  ->  {'net gain' if econ.get('net_positive') else 'net cost'}"),
+        ("Fleet phi / break-even phi*", f"{econ['phi']:.2f} ({_phi_src})  /  {econ['breakeven_phi']:.2f}"),
     ])
     pdf.ln(2)
 
@@ -902,20 +938,43 @@ pc1, pc2 = dcols([3, 2])
 pc1.plotly_chart(fan_fig(payload["bayesian_fan"], post["p50"]), width="stretch", config={"displayModeBar": False})
 pc2.plotly_chart(pdf_hist_fig(post), width="stretch", config={"displayModeBar": False})
 
-st.markdown('<div class="sec">Decision - risk-based inspection &middot; fleet economics</div>', unsafe_allow_html=True)
+st.markdown('<div class="sec">Decision - risk-based inspection schedule</div>', unsafe_allow_html=True)
 dc1, dc2 = dcols([3, 2])
 dc1.plotly_chart(pof_fig(insp), width="stretch", config={"displayModeBar": False})
 with dc2:
     st.markdown(kpi_row([
-        kpi("Fleet saving (20u, 20yr)",
-            f'${econ["fleet_saving_low_usd"]/1e6:.1f}-{econ["fleet_saving_high_usd"]/1e6:.1f}M', "", "sig"),
-        kpi("Sensor payback", f'{econ["payback_low_yr"]:.1f}-{econ["payback_high_yr"]:.1f}', "yr"),
+        kpi("Next inspection", f'{insp["next_inspection_year"]:.1f}', "yr", "sig"),
+        kpi("Target PoF", f'{insp["target_pof"]*100:.1f}', "%"),
     ]), unsafe_allow_html=True)
     st.markdown(kpi_row([
-        kpi("Target PoF", f'{insp["target_pof"]*100:.1f}', "%"),
         kpi("PoF at inspection", f'{insp["pof_at_next"]*100:.2f}', "%",
             "alarm" if insp["pof_at_next"] > insp["target_pof"] * 1.05 else ""),
     ]), unsafe_allow_html=True)
+
+# --- Conditional CBM economics (Eq. 11): value depends on phi, not a flat saving ---
+_net_tone = "sig" if econ.get("net_positive") else "alarm"
+_net = econ["fleet_delta_c_usd"] / 1e6
+_phi_src = "from posterior" if econ.get("phi_is_endogenous") else "break-even ref"
+st.markdown('<div class="sec">Conditional economics (Eq. 11) &middot; discounted value of monitoring vs &phi;</div>',
+            unsafe_allow_html=True)
+ec1, ec2 = dcols([3, 2])
+ec1.plotly_chart(econ_fig(econ), width="stretch", config={"displayModeBar": False})
+with ec2:
+    st.markdown(kpi_row([
+        kpi(f"Net fleet value ΔC ({econ['n_units']}u, {econ['horizon_yr']:.0f}yr)",
+            f'{_net:+.1f}', "US$M", _net_tone),
+        kpi("per unit", f'{econ["per_unit_delta_c_usd"]/1e6:+.2f}', "US$M", _net_tone),
+    ]), unsafe_allow_html=True)
+    st.markdown(kpi_row([
+        kpi(f"Fleet φ ({_phi_src})", f'{econ["phi"]:.2f}', "", "amber"),
+        kpi("Break-even φ*", f'{econ["breakeven_phi"]:.2f}'),
+    ]), unsafe_allow_html=True)
+    st.caption(
+        "φ = P(asset ages slower than design), estimated from this run's remaining-life "
+        f"posterior. The sensor pays only when φ > φ*={econ['breakeven_phi']:.2f}; at r="
+        f"{econ['discount_rate']*100:.0f}% discount this fleet's φ={econ['phi']:.2f} makes it a "
+        f"net {'gain' if econ.get('net_positive') else 'cost'}. Discounting replaces the "
+        "retracted flat headline saving.")
 
 vc1, vc2 = dcols([3, 2])
 with vc1:

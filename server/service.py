@@ -13,7 +13,11 @@ import numpy as np
 
 from scr_twin_core.bayesian import BayesianRateEstimator
 from scr_twin_core.config import AnalysisConfig
-from scr_twin_core.inspection import EconomicsModel, fleet_economics, next_inspection
+from scr_twin_core.inspection import (
+    ConditionalEconomicsModel,
+    fleet_economics_conditional,
+    next_inspection,
+)
 from scr_twin_core.miner import SECONDS_PER_YEAR
 from scr_twin_core.pipeline import FullResult, run_full_analysis
 from scr_twin_core.synthetic import synthetic_mru_6dof, synthetic_mru_motion
@@ -157,7 +161,13 @@ def analyze(
     pof_years = np.linspace(0.5, horizon, 60)
     pof_vals = [float(np.mean(mc.life_years <= t)) for t in pof_years]
 
-    econ = fleet_economics(EconomicsModel())
+    # Conditional CBM economics (Eq. 11): phi is estimated endogenously from this
+    # run's own remaining-life posterior (P(life > design life)), not assumed.
+    econ = fleet_economics_conditional(
+        ConditionalEconomicsModel(),
+        life_samples=mc.life_years,
+        design_life_years=result.deterministic_life_years,
+    )
     rate_std = float(np.std(mc.damage_rate_per_year))
     fan = bayesian_life_fan(result.annual_damage_rate_time, rate_std)
 

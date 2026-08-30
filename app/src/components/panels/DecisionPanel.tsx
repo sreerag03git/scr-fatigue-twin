@@ -1,5 +1,5 @@
 import { useStore } from "../../state/store";
-import { pct, usd, years } from "../../lib/format";
+import { pct, years } from "../../lib/format";
 import { LineChart } from "../charts/LineChart";
 import { EmptyState, Measured, Metric, Panel } from "../ui";
 
@@ -32,15 +32,39 @@ export function DecisionPanel() {
           </Measured>
 
           <hr className="rule" />
-          <div className="eyebrow" style={{ marginBottom: 6 }}>Fleet business case · 20 units · 20 yr</div>
-          <div className="metric-grid" style={{ gridTemplateColumns: "repeat(2, 1fr)" }}>
-            <Metric label="Net saving (range)" value={`${usd(result.economics.fleet_saving_low_usd)}–${usd(result.economics.fleet_saving_high_usd)}`} tone="signal" />
-            <Metric label="Sensor payback" value={`${result.economics.payback_low_yr.toFixed(1)}–${result.economics.payback_high_yr.toFixed(1)}`} unit="yr" />
-            <Metric label="Baseline inspection /unit" value={usd(result.economics.baseline_inspection_cost_usd)} />
-            <Metric label="Monitoring cost /unit" value={usd(result.economics.monitoring_cost_usd)} />
+          <div className="eyebrow" style={{ marginBottom: 6 }}>
+            Conditional economics (Eq. 11) · {result.economics.n_units} units · {result.economics.horizon_yr.toFixed(0)} yr
+          </div>
+          <div className="metric-grid" style={{ gridTemplateColumns: "repeat(3, 1fr)", marginBottom: 8 }}>
+            <Metric
+              label="Net value ΔC (fleet)"
+              value={usdM(result.economics.fleet_delta_c_usd)}
+              tone={result.economics.net_positive ? "signal" : "alarm"}
+            />
+            <Metric label="Fleet φ" value={result.economics.phi.toFixed(2)} unit={result.economics.phi_is_endogenous ? "post." : "ref"} />
+            <Metric label="Break-even φ*" value={result.economics.breakeven_phi.toFixed(2)} />
+          </div>
+          <Measured height={140}>
+            {(w) => (
+              <LineChart width={w} height={140} x={result.economics.phi_grid}
+                y={result.economics.fleet_delta_c_p50_usd.map((v) => v / 1e6)}
+                color="var(--signal-2)" xLabel="φ = P(ages slower than design)" yLabel="ΔC [US$M]"
+                yFormat={(v) => v.toFixed(0)} fill
+                hmarker={{ value: 0, label: "break-even", color: "var(--alarm)" }}
+                vmarker={{ value: result.economics.breakeven_phi, label: `φ*=${result.economics.breakeven_phi.toFixed(2)}`, color: "var(--alarm)" }}
+              />
+            )}
+          </Measured>
+          <div className="eyebrow" style={{ marginTop: 6, opacity: 0.7 }}>
+            φ estimated from the remaining-life posterior; the sensor pays only for φ &gt; φ*. Discounting (r=
+            {(result.economics.discount_rate * 100).toFixed(0)}%) replaces the retracted flat headline saving.
           </div>
         </>
       )}
     </Panel>
   );
+}
+
+function usdM(v: number): string {
+  return `${v >= 0 ? "+" : "−"}$${Math.abs(v / 1e6).toFixed(1)}M`;
 }

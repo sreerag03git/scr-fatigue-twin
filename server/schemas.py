@@ -31,18 +31,23 @@ class AnalyzeUploadRequest(BaseModel):
 
 
 class EconomicsParams(BaseModel):
-    """Editable fleet-economics inputs (mirror of core EconomicsModel)."""
+    """Editable conditional-economics inputs (mirror of core ConditionalEconomicsModel).
 
+    ``phi`` (optional) fixes the fleet operating point P(asset ages slower than
+    design); leave it null to report at the break-even phi.
+    """
+
+    discount_rate: float = 0.08
     inspection_cost_usd: float = 1.0e6
     baseline_interval_yr: float = 5.0
-    rbi_interval_conservative_yr: float = 6.5
-    rbi_interval_optimistic_yr: float = 10.0
-    monitoring_capex_usd: float = 0.14e6
-    monitoring_opex_usd_per_yr: float = 0.026e6
-    failure_consequence_usd: float = 50.0e6
-    pof_reduction_optimistic: float = 0.01
+    cbm_interval_slow_yr: float = 8.0
+    cbm_interval_fast_yr: float = 4.0
+    sensor_capex_usd: float = 0.14e6
+    sensor_opex_usd_per_yr: float = 0.026e6
     horizon_yr: float = 20.0
     n_units: int = 20
+    cost_cov: float = 0.25
+    phi: float | None = None
 
 
 class HealthResponse(BaseModel):

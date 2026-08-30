@@ -26,7 +26,7 @@ from fastapi.staticfiles import StaticFiles
 from scr_twin_core import __version__ as core_version
 from scr_twin_core.config import AnalysisConfig, RiserConfig
 from scr_twin_core.ingest import IngestedMRU, load_mru_csv, load_mru_parquet
-from scr_twin_core.inspection import EconomicsModel, fleet_economics
+from scr_twin_core.inspection import ConditionalEconomicsModel, fleet_economics_conditional
 from scr_twin_core.sn import DNV_C203_IN_AIR
 from scr_twin_core.validation import run_all_gates
 
@@ -136,13 +136,17 @@ def validation() -> dict[str, Any]:
 
 @app.get("/api/economics")
 def economics_default() -> dict[str, Any]:
-    return service.to_native(fleet_economics(EconomicsModel()).as_dict())
+    """Conditional CBM economics at the break-even phi (no run posterior supplied)."""
+    return service.to_native(fleet_economics_conditional(ConditionalEconomicsModel()).as_dict())
 
 
 @app.post("/api/economics")
 def economics(params: EconomicsParams) -> dict[str, Any]:
-    model = EconomicsModel(**params.model_dump())
-    return service.to_native(fleet_economics(model).as_dict())
+    """Conditional CBM economics for edited costs, at an optional operating phi."""
+    body = params.model_dump()
+    phi = body.pop("phi", None)
+    model = ConditionalEconomicsModel(**body)
+    return service.to_native(fleet_economics_conditional(model, phi=phi).as_dict())
 
 
 @app.post("/api/analyze/synthetic")
