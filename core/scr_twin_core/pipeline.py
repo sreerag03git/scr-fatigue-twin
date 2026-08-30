@@ -23,6 +23,7 @@ from pydantic import BaseModel
 from . import __version__
 from .config import AnalysisConfig
 from .environment import EnvironmentCorrection
+from .hang_off_kinematics import resolve_hang_off
 from .miner import SECONDS_PER_YEAR, DamageResult, block_damage
 from .montecarlo import MonteCarloResult, UncertaintyModel, run_monte_carlo
 from .rainflow import count_cycles
@@ -73,6 +74,7 @@ class FullResult:
     hf_phase: NDArray[np.float64]
     transfer_route: str
     transfer_provenance: dict
+    dof_contributions: dict
     time_domain_block: DamageResult
     annual_damage_rate_time: float
     annual_damage_rate_spectral: float
@@ -117,6 +119,7 @@ def run_full_analysis(
     *,
     motion_is_synthetic: bool = False,
     imported_tf: InterpolatedTransferFunction | None = None,
+    motion_channels: dict[str, NDArray[np.float64]] | None = None,
 ) -> FullResult:
     """Run the full chain deterministically for one motion block.
 
@@ -132,9 +135,20 @@ def run_full_analysis(
         Whether ``motion_heave`` came from the synthetic generator (badged in
         provenance so downstream UI can label it).
     """
-    x = np.asarray(motion_heave, dtype=np.float64).ravel()
+    # Layer 0: resolve the vertical hang-off (porch) motion that drives the TDP.
+    # With 6-DOF channels this applies Eq. 6 (heave + pitch/roll lever arms);
+    # with only heave the resolved motion is the heave itself.
+    if motion_channels:
+        resolved = resolve_hang_off(
+            motion_channels, config.hang_off.geometry(), exact=config.hang_off.exact_rotation
+        )
+        x = np.asarray(resolved.vertical, dtype=np.float64).ravel()
+        dof_contributions = resolved.contribution_fractions()
+    else:
+        x = np.asarray(motion_heave, dtype=np.float64).ravel()
+        dof_contributions = {"heave": 1.0}
     if x.size < 16:
-        raise ValueError("motion_heave too short for analysis (need >= 16 samples)")
+        raise ValueError("motion too short for analysis (need >= 16 samples)")
     if fs <= 0.0:
         raise ValueError("fs must be positive")
 
@@ -263,6 +277,7 @@ def run_full_analysis(
         hf_phase=hf_phase,
         transfer_route=tcfg.route,
         transfer_provenance=transfer_provenance,
+        dof_contributions=dof_contributions,
         time_domain_block=td_block,
         annual_damage_rate_time=annual_rate_time,
         annual_damage_rate_spectral=annual_rate_spectral,

@@ -16,7 +16,7 @@ from scr_twin_core.config import AnalysisConfig
 from scr_twin_core.inspection import EconomicsModel, fleet_economics, next_inspection
 from scr_twin_core.miner import SECONDS_PER_YEAR
 from scr_twin_core.pipeline import FullResult, run_full_analysis
-from scr_twin_core.synthetic import synthetic_mru_motion
+from scr_twin_core.synthetic import synthetic_mru_6dof, synthetic_mru_motion
 from scr_twin_core.transfer import InterpolatedTransferFunction, load_transfer_csv
 
 MAX_POINTS = 280  # cap transported array length for smooth, light charts
@@ -139,10 +139,16 @@ def analyze(
     is_synthetic: bool,
     data_health: dict[str, Any] | None = None,
     imported_tf: InterpolatedTransferFunction | None = None,
+    channels: dict[str, np.ndarray] | None = None,
 ) -> dict[str, Any]:
-    """Run the full chain and assemble the complete dashboard payload."""
+    """Run the full chain and assemble the complete dashboard payload.
+
+    When ``channels`` (6-DOF) is supplied the hang-off motion is resolved via
+    Eq. 6; otherwise ``heave`` alone drives the chain.
+    """
     result = run_full_analysis(
-        config, heave, fs, motion_is_synthetic=is_synthetic, imported_tf=imported_tf
+        config, heave, fs, motion_is_synthetic=is_synthetic,
+        imported_tf=imported_tf, motion_channels=channels,
     )
     mc = result.monte_carlo
 
@@ -162,6 +168,7 @@ def analyze(
         },
         "spectrum": _spectrum_payload(result),
         "transfer": _transfer_payload(result),
+        "dof_contributions": result.dof_contributions,
         "damage": {
             "annual_rate_time": result.annual_damage_rate_time,
             "annual_rate_spectral": result.annual_damage_rate_spectral,
@@ -199,6 +206,16 @@ def make_synthetic(hs: float, tp: float, gamma: float, duration: float, fs: floa
     """Generate a deterministic synthetic heave record (badged synthetic upstream)."""
     m = synthetic_mru_motion(duration=duration, fs=fs, hs=hs, tp=tp, gamma=gamma, seed=seed)
     return m.heave, m.fs
+
+
+def make_synthetic_6dof(
+    hs: float, tp: float, gamma: float, duration: float, fs: float, seed: int, heading_deg: float,
+) -> tuple[dict[str, np.ndarray], float]:
+    """Generate a deterministic synthetic 6-DOF MRU record (channels dict + fs)."""
+    m = synthetic_mru_6dof(
+        duration=duration, fs=fs, hs=hs, tp=tp, gamma=gamma, seed=seed, heading_deg=heading_deg
+    )
+    return m.channels, m.fs
 
 
 def stream_seconds_per_year() -> float:
