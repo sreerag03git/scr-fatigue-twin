@@ -35,6 +35,7 @@ References
 
 from __future__ import annotations
 
+import io
 import math
 from dataclasses import dataclass
 
@@ -192,13 +193,50 @@ def analytic_transfer_function(
     return TransferFunction(freqs=f, value=value.astype(np.complex128), is_reduced_order=True)
 
 
+@dataclass(frozen=True)
+class TransferProvenance:
+    """Where an imported H(f) came from - stored so a run is traceable.
+
+    An imported vendor table is treated as *validated (project)* data; a
+    reduced-order or illustrative table is not. ``as_dict`` feeds the run
+    provenance and the report badge.
+    """
+
+    source_tool: str = "unknown"     # e.g. "OrcaFlex", "RIFLEX", "DeepLines"
+    tool_version: str = ""
+    load_case: str = ""              # e.g. "Hs=6.8m Tp=11s heading=180 draft=survival"
+    notes: str = ""
+    is_validated: bool = True
+    n_points: int = 0
+    freq_min_hz: float = 0.0
+    freq_max_hz: float = 0.0
+
+    def as_dict(self) -> dict[str, object]:
+        return {
+            "source_tool": self.source_tool, "tool_version": self.tool_version,
+            "load_case": self.load_case, "notes": self.notes,
+            "is_validated": self.is_validated, "n_points": self.n_points,
+            "freq_min_hz": self.freq_min_hz, "freq_max_hz": self.freq_max_hz,
+        }
+
+
 class InterpolatedTransferFunction:
-    """Route 2: H(f) imported from a validated riser analysis and interpolated.
+    """Route 2: complex H(f) imported from a validated riser analysis.
+
+    Consumes a magnitude/phase (or Re/Im) TDP moment-transfer table exported from
+    OrcaFlex / RIFLEX / DeepLines / Flexcom for a specific (riser, vessel,
+    heading, draft, top-tension) load case, and interpolates it onto the analysis
+    grid. This is the mechanism the paper leans on; the table itself is the
+    project's to supply (see :func:`load_transfer_csv`).
 
     Parameters
     ----------
     table_freqs, table_magnitude, table_phase:
-        Tabulated frequency [Hz], moment magnitude [N m / m] and phase [rad].
+        Tabulated frequency [Hz], TDP moment-transfer magnitude [N m / m] and
+        phase [rad].
+    provenance:
+        Optional :class:`TransferProvenance`; ``n_points`` / frequency range are
+        filled in from the data if not supplied.
     """
 
     def __init__(
@@ -206,6 +244,8 @@ class InterpolatedTransferFunction:
         table_freqs: ArrayLike,
         table_magnitude: ArrayLike,
         table_phase: ArrayLike,
+        *,
+        provenance: TransferProvenance | None = None,
     ) -> None:
         f = np.asarray(table_freqs, dtype=np.float64)
         mag = np.asarray(table_magnitude, dtype=np.float64)
@@ -214,10 +254,21 @@ class InterpolatedTransferFunction:
             raise ValueError("table_freqs, table_magnitude, table_phase must share shape")
         if f.size < 2:
             raise ValueError("need at least two table points to interpolate")
+        if not np.all(np.isfinite(f)) or not np.all(np.isfinite(mag)) or not np.all(np.isfinite(ph)):
+            raise ValueError("transfer-function table contains non-finite values")
+        if np.any(mag < 0.0):
+            raise ValueError("transfer-function magnitude must be non-negative")
         order = np.argsort(f)
         self._f = f[order]
         self._mag = mag[order]
         self._ph = np.unwrap(ph[order])
+        base = provenance or TransferProvenance()
+        self.provenance = TransferProvenance(
+            source_tool=base.source_tool, tool_version=base.tool_version,
+            load_case=base.load_case, notes=base.notes, is_validated=base.is_validated,
+            n_points=int(self._f.size),
+            freq_min_hz=float(self._f.min()), freq_max_hz=float(self._f.max()),
+        )
 
     def evaluate(self, freqs: ArrayLike) -> TransferFunction:
         """Interpolate onto ``freqs`` (linear; clamped outside the table)."""
@@ -226,6 +277,103 @@ class InterpolatedTransferFunction:
         ph = np.interp(f, self._f, self._ph)
         value = mag * np.exp(1j * ph)
         return TransferFunction(freqs=f, value=value.astype(np.complex128), is_reduced_order=False)
+
+
+# Column-name aliases for imported H(f) CSVs (lower-cased, stripped).
+_TF_FREQ_COLS = {"freq", "freq_hz", "frequency", "frequency_hz", "f", "hz", "f_hz"}
+_TF_MAG_COLS = {"magnitude", "mag", "abs", "amplitude", "h_mag", "|h|", "hmag"}
+_TF_PHASE_COLS = {"phase", "phase_rad", "phase_deg", "arg", "angle", "angle_rad", "angle_deg"}
+_TF_RE_COLS = {"re", "real", "h_re", "re_h"}
+_TF_IM_COLS = {"im", "imag", "imaginary", "h_im", "im_h"}
+
+
+def load_transfer_csv(source: object, **overrides: object) -> InterpolatedTransferFunction:
+    """Load a complex H(f) table from a CSV exported by a riser-analysis tool.
+
+    Accepts either magnitude/phase or real/imag columns plus a frequency column
+    (case-insensitive header aliases). Provenance may be given as ``# key: value``
+    comment lines in the file header (``source_tool``, ``tool_version``,
+    ``load_case``, ``notes``) and/or overridden via keyword arguments. Phase is
+    radians unless the phase column is named ``*_deg`` (then degrees).
+
+    Raises ``ValueError`` with a clear message on any malformed input - an
+    imported H(f) is safety-critical, so it is rejected loudly rather than
+    degraded silently.
+    """
+    import pandas as pd
+
+    # --- read provenance comment lines, then the data ---
+    meta: dict[str, str] = {}
+    text: str | None = None
+    if isinstance(source, (str, bytes)) or hasattr(source, "read"):
+        try:
+            if hasattr(source, "read"):
+                raw = source.read()
+                text = raw.decode("utf-8", "replace") if isinstance(raw, bytes) else raw
+            elif isinstance(source, bytes):
+                text = source.decode("utf-8", "replace")
+            elif isinstance(source, str) and ("\n" in source or "," in source):
+                text = source
+        except Exception:  # noqa: BLE001
+            text = None
+    if text is not None:
+        for line in text.splitlines():
+            s = line.strip()
+            if not s.startswith("#") or ":" not in s:
+                continue
+            k, _, v = s.lstrip("#").strip().partition(":")
+            if k.strip().lower() in {"source_tool", "tool_version", "load_case", "notes"}:
+                meta[k.strip().lower()] = v.strip()
+
+    try:
+        buf = io.StringIO(text) if text is not None else source
+        df = pd.read_csv(buf, comment="#", skip_blank_lines=True)  # type: ignore[arg-type]
+    except Exception as exc:  # noqa: BLE001
+        raise ValueError(f"could not parse transfer-function CSV: {exc}") from exc
+    if df.empty:
+        raise ValueError("transfer-function CSV has no data rows")
+
+    cols = {str(c).strip().lower(): c for c in df.columns}
+
+    def pick(aliases: set[str]) -> str | None:
+        for a in aliases:
+            if a in cols:
+                return cols[a]
+        return None
+
+    fcol = pick(_TF_FREQ_COLS)
+    if fcol is None:
+        raise ValueError(f"no frequency column found (need one of {sorted(_TF_FREQ_COLS)})")
+    freqs = pd.to_numeric(df[fcol], errors="coerce").to_numpy(dtype=np.float64)
+
+    magcol, phcol = pick(_TF_MAG_COLS), pick(_TF_PHASE_COLS)
+    recol, imcol = pick(_TF_RE_COLS), pick(_TF_IM_COLS)
+    if magcol is not None and phcol is not None:
+        mag = pd.to_numeric(df[magcol], errors="coerce").to_numpy(dtype=np.float64)
+        phase = pd.to_numeric(df[phcol], errors="coerce").to_numpy(dtype=np.float64)
+        if str(phcol).strip().lower().endswith("deg"):
+            phase = np.deg2rad(phase)
+    elif recol is not None and imcol is not None:
+        re = pd.to_numeric(df[recol], errors="coerce").to_numpy(dtype=np.float64)
+        im = pd.to_numeric(df[imcol], errors="coerce").to_numpy(dtype=np.float64)
+        mag = np.hypot(re, im)
+        phase = np.arctan2(im, re)
+    else:
+        raise ValueError("need magnitude+phase columns or real+imag columns")
+
+    good = np.isfinite(freqs) & np.isfinite(mag) & np.isfinite(phase)
+    freqs, mag, phase = freqs[good], mag[good], phase[good]
+    if freqs.size < 2:
+        raise ValueError("fewer than two valid (freq, H) rows after cleaning")
+
+    prov = TransferProvenance(
+        source_tool=str(overrides.get("source_tool", meta.get("source_tool", "imported"))),
+        tool_version=str(overrides.get("tool_version", meta.get("tool_version", ""))),
+        load_case=str(overrides.get("load_case", meta.get("load_case", ""))),
+        notes=str(overrides.get("notes", meta.get("notes", ""))),
+        is_validated=True,
+    )
+    return InterpolatedTransferFunction(freqs, mag, phase, provenance=prov)
 
 
 # Illustrative reference TDP moment-transfer magnitude scale [N m per m heave].

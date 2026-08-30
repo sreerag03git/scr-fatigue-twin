@@ -21,11 +21,13 @@ class SyntheticParams(BaseModel):
 class AnalyzeSyntheticRequest(BaseModel):
     config: AnalysisConfig
     synthetic: SyntheticParams = Field(default_factory=SyntheticParams)
+    transfer_token: str | None = None  # required when config.transfer.route == "imported"
 
 
 class AnalyzeUploadRequest(BaseModel):
     config: AnalysisConfig
     token: str
+    transfer_token: str | None = None  # required when config.transfer.route == "imported"
 
 
 class EconomicsParams(BaseModel):

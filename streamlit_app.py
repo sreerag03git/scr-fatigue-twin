@@ -195,23 +195,43 @@ def gates() -> list[dict]:
     return [g.as_dict() for g in validation_mod.run_all_gates(seed=0)]
 
 
+def _imported_tf(cfg: AnalysisConfig, transfer_bytes: bytes | None):
+    """Parse the imported H(f) when the route needs it. Returns (tf, error)."""
+    if cfg.transfer.route != "imported":
+        return None, None
+    if not transfer_bytes:
+        return None, "Transfer route 'imported' selected but no validated H(f) table uploaded."
+    try:
+        return service.load_transfer(transfer_bytes), None
+    except ValueError as exc:
+        return None, f"Invalid H(f) table - {exc}"
+
+
 @st.cache_data(show_spinner=False)
 def analyze_synthetic(config_json: str, hs: float, tp: float, gamma: float,
-                      duration: float, fs: float, seed: int) -> dict:
+                      duration: float, fs: float, seed: int,
+                      transfer_bytes: bytes | None = None) -> dict:
     cfg = AnalysisConfig.model_validate_json(config_json)
+    tf, err = _imported_tf(cfg, transfer_bytes)
+    if err:
+        return {"error": err}
     heave, fsr = service.make_synthetic(hs, tp, gamma, duration, fs, seed)
-    return service.analyze(cfg, heave, fsr, is_synthetic=True)
+    return service.analyze(cfg, heave, fsr, is_synthetic=True, imported_tf=tf)
 
 
 @st.cache_data(show_spinner=False)
-def analyze_upload(config_json: str, file_bytes: bytes) -> dict:
+def analyze_upload(config_json: str, file_bytes: bytes,
+                   transfer_bytes: bytes | None = None) -> dict:
     cfg = AnalysisConfig.model_validate_json(config_json)
+    tf, err = _imported_tf(cfg, transfer_bytes)
+    if err:
+        return {"error": err}
     rec = ingest_mod.load_mru_csv(io.BytesIO(file_bytes))
     if not rec.health.ok:
         return {"error": "; ".join(rec.health.flags) or "data health check failed",
                 "health": rec.health.as_dict()}
     return service.analyze(cfg, rec.channels["heave"], rec.fs,
-                           is_synthetic=False, data_health=rec.health.as_dict())
+                           is_synthetic=False, data_health=rec.health.as_dict(), imported_tf=tf)
 
 
 @st.cache_data(show_spinner=False)
@@ -269,6 +289,18 @@ def spectra_fig(spec: dict) -> go.Figure:
         yaxis=dict(title="motion [m^2/Hz]", type="log", gridcolor=GRID, color=SIGNAL, zeroline=False),
         yaxis2=dict(title="stress [MPa^2/Hz]", type="log", overlaying="y", side="right", color=AMBER, showgrid=False),
     )
+    return f
+
+
+def transfer_fig(tf: dict) -> go.Figure:
+    """Layer-1 |H(f)| stress transfer (Fig 4): MPa of TDP hot-spot stress per m heave."""
+    f = _fig(250)
+    f.add_scatter(x=tf["freq"], y=tf["stress_mag"], line=dict(color=SIGNAL2, width=2.2),
+                  fill="tozeroy", fillcolor="rgba(15,143,156,0.08)", name="|H|")
+    # Highlight the wave-frequency band the paper validates over (0.05-0.30 Hz).
+    f.add_vrect(x0=0.05, x1=0.30, fillcolor="rgba(180,121,26,0.06)", line_width=0)
+    f.update_layout(xaxis=dict(title="Frequency [Hz]", gridcolor=GRID, zeroline=False, range=[0, 0.4]),
+                    yaxis=dict(title="|H| [MPa per m heave]", gridcolor=GRID, zeroline=False, rangemode="tozero"))
     return f
 
 
@@ -548,9 +580,24 @@ with st.sidebar.expander("Steel catenary riser", expanded=True):
     scf = st.number_input("SCF", 1.0, 5.0, ref.scf, 0.05)
     sn_class = st.selectbox("DNV S-N class", SN_CLASSES, index=SN_CLASSES.index(ref.sn_class))
 
-with st.sidebar.expander("Transfer function (Layer 1)"):
-    route = st.radio("Route", ["reference", "analytic"], horizontal=True,
-                     help="Reference = illustrative Route-2 table. Analytic = reduced-order Route-1.")
+with st.sidebar.expander("Transfer function (Layer 1)", expanded=True):
+    route = st.radio(
+        "H(f) route", ["reference", "analytic", "imported"], horizontal=True,
+        help="imported = validated vendor H(f) (OrcaFlex/RIFLEX/DeepLines). "
+             "reference = illustrative table (NOT data). analytic = reduced-order Route-1.",
+    )
+    transfer_bytes: bytes | None = None
+    if route == "imported":
+        hf_up = st.file_uploader("Validated H(f) CSV", type=["csv"], key="hf_csv")
+        if hf_up is not None:
+            transfer_bytes = hf_up.getvalue()
+        st.caption("Complex TDP moment transfer. Columns `freq_hz, magnitude, phase_rad` "
+                   "(or `freq, re, im`); `# key: value` header lines carry provenance. "
+                   "Example: `data/samples/example_transfer_function.csv`.")
+    elif route == "reference":
+        st.caption("Illustrative wave-band table - realistic magnitude but **not project data**.")
+    else:
+        st.caption("Reduced-order Morison model - a documented engineering approximation.")
 
 with st.sidebar.expander("Arabian Gulf correction", expanded=True):
     env_on = st.toggle("Apply correction", value=True)
@@ -611,9 +658,9 @@ run_clicked = run_col.button("▶  Run analysis", type="primary", width="stretch
 # --------------------------------------------------------------------------- #
 if is_synth:
     payload = analyze_synthetic(cfg.model_dump_json(), synth["hs"], synth["tp"], synth["gamma"],
-                                synth["duration"], synth["fs"], int(synth["seed"]))
+                                synth["duration"], synth["fs"], int(synth["seed"]), transfer_bytes)
 elif upload_bytes is not None:
-    payload = analyze_upload(cfg.model_dump_json(), upload_bytes)
+    payload = analyze_upload(cfg.model_dump_json(), upload_bytes, transfer_bytes)
 else:
     st.info("Upload an MRU CSV in the sidebar, or switch to the synthetic demo generator, then press Run analysis.")
     st.stop()
@@ -755,6 +802,33 @@ tf.add_scatter(x=payload["trace"]["time"], y=payload["trace"]["heave"], line=dic
 tf.update_layout(xaxis=dict(title="t [s]", gridcolor=GRID, zeroline=False),
                  yaxis=dict(title="heave [m]", gridcolor=GRID, zeroline=False))
 sc2.plotly_chart(tf, width="stretch", config={"displayModeBar": False})
+
+# --- Layer 1: transfer function H(f) (Fig 4) + validated/illustrative badge ---
+st.markdown('<div class="sec">Layer 1 - transfer function H(f) &middot; MRU motion &rarr; TDP stress</div>',
+            unsafe_allow_html=True)
+_tf = payload["transfer"]
+_prov = _tf.get("provenance", {})
+if _tf["is_validated"]:
+    _badge = '<span class="tag pass">VALIDATED (project)</span>'
+    _src = f' &nbsp;<span class="foot">route: imported &middot; {_prov.get("source_tool", "")} ' \
+           f'{_prov.get("tool_version", "")} &middot; {_prov.get("load_case", "")}</span>'
+else:
+    _badge = '<span class="tag syn">ILLUSTRATIVE / approximate - NOT project data</span>'
+    _src = f' &nbsp;<span class="foot">route: {_tf["route"]}</span>'
+st.markdown(f'<div style="margin:-2px 0 8px">{_badge}{_src}</div>', unsafe_allow_html=True)
+hc1, hc2 = dcols([3, 2])
+hc1.plotly_chart(transfer_fig(_tf), width="stretch", config={"displayModeBar": False})
+with hc2:
+    _peak = max(_tf["stress_mag"]) if _tf["stress_mag"] else 0.0
+    _ipk = _tf["stress_mag"].index(_peak) if _peak else 0
+    st.markdown(kpi_row([
+        kpi("Peak |H|", f"{_peak:.1f}", "MPa/m", "sig"),
+        kpi("at frequency", f'{_tf["freq"][_ipk]:.3f}', "Hz"),
+    ]), unsafe_allow_html=True)
+    if not _tf["is_validated"]:
+        st.caption("For a defensible TDP stress, import a validated OrcaFlex/RIFLEX/DeepLines "
+                   "H(f) (sidebar -> Transfer function -> route = imported). The reference and "
+                   "analytic routes are an illustrative table and a reduced-order model.")
 
 st.markdown('<div class="sec">Layer 2 - rainflow &middot; S-N &middot; Miner</div>', unsafe_allow_html=True)
 st.markdown(kpi_row([

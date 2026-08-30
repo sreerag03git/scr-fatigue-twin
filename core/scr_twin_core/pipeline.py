@@ -35,6 +35,7 @@ from .stress import (
     stress_psd_from_motion_psd,
 )
 from .transfer import (
+    InterpolatedTransferFunction,
     TransferFunction,
     analytic_transfer_function,
     reference_transfer_function,
@@ -53,6 +54,9 @@ class Provenance(BaseModel):
     sample_rate_hz: float
     transfer_is_reduced_order: bool
     motion_is_synthetic: bool
+    transfer_route: str = "reference"
+    transfer_is_validated: bool = False
+    transfer_source: str = ""
 
 
 @dataclass(frozen=True)
@@ -63,6 +67,12 @@ class FullResult:
     motion_freqs: NDArray[np.float64]
     motion_psd: NDArray[np.float64]
     stress_psd: NDArray[np.float64]
+    hf_freqs: NDArray[np.float64]
+    hf_moment_mag: NDArray[np.float64]
+    hf_stress_mag: NDArray[np.float64]
+    hf_phase: NDArray[np.float64]
+    transfer_route: str
+    transfer_provenance: dict
     time_domain_block: DamageResult
     annual_damage_rate_time: float
     annual_damage_rate_spectral: float
@@ -106,6 +116,7 @@ def run_full_analysis(
     fs: float,
     *,
     motion_is_synthetic: bool = False,
+    imported_tf: InterpolatedTransferFunction | None = None,
 ) -> FullResult:
     """Run the full chain deterministically for one motion block.
 
@@ -139,10 +150,17 @@ def run_full_analysis(
     def build_tf(freqs: NDArray[np.float64]) -> TransferFunction:
         """Layer-1 H(f) on ``freqs`` per the configured route.
 
-        ``reference`` -> illustrative Route-2 table (realistic magnitude);
-        ``analytic`` -> Route-1 reduced-order model (honest but under-predicting).
-        (``imported`` requires a user table via the API and is not reachable here.)
+        ``imported`` -> validated project table (OrcaFlex/RIFLEX/...), preferred;
+        ``reference`` -> illustrative Route-2 table (realistic magnitude, NOT data);
+        ``analytic`` -> Route-1 reduced-order model (documented approximation).
         """
+        if tcfg.route == "imported":
+            if imported_tf is None:
+                raise ValueError(
+                    "transfer route 'imported' requires a validated H(f) table; "
+                    "supply one via load_transfer_csv / the H(f) upload."
+                )
+            return imported_tf.evaluate(freqs)
         if tcfg.route == "analytic":
             return analytic_transfer_function(
                 freqs, catenary, section,
@@ -154,6 +172,23 @@ def run_full_analysis(
                 contents_density=riser.contents_density,
             )
         return reference_transfer_function(freqs)
+
+    # Transfer-function provenance: only an imported vendor table counts as
+    # validated (project) data; reference/analytic are illustrative/approximate.
+    if tcfg.route == "imported" and imported_tf is not None:
+        transfer_is_validated = bool(imported_tf.provenance.is_validated)
+        transfer_source = imported_tf.provenance.source_tool or "imported"
+        transfer_provenance = imported_tf.provenance.as_dict()
+    elif tcfg.route == "analytic":
+        transfer_is_validated = False
+        transfer_source = "reduced-order (Route 1)"
+        transfer_provenance = {"is_validated": False,
+                               "notes": "reduced-order Morison model - documented approximation"}
+    else:
+        transfer_is_validated = False
+        transfer_source = "illustrative reference (Route 2)"
+        transfer_provenance = {"is_validated": False,
+                               "notes": "illustrative reference bump - NOT project data"}
 
     # --- Sea state (Welch + JONSWAP fit) ---
     f_w, pxx = welch_psd(x, fs)
@@ -185,6 +220,15 @@ def run_full_analysis(
     else:
         annual_rate_spectral = 0.0
 
+    # --- |H(f)| curve for the Fig-4 transfer-function view (wave band) ---
+    # Reported both as TDP moment transfer [N m per m heave] and, matching the
+    # paper's Fig 4, as stress transfer [MPa per m heave] = |H_moment| SCF / Z.
+    hf_freqs = np.linspace(0.02, 0.40, 200)
+    tf_hf = build_tf(hf_freqs)
+    hf_moment_mag = tf_hf.magnitude
+    hf_stress_mag = hf_moment_mag * riser.scf / section.section_modulus / 1.0e6
+    hf_phase = tf_hf.phase
+
     # --- Layer 3: Monte Carlo remaining-life posterior ---
     model = UncertaintyModel(
         env_factor_mean=env_factor if correction is not None else 1.0,
@@ -203,6 +247,9 @@ def run_full_analysis(
         sample_rate_hz=float(fs),
         transfer_is_reduced_order=tf_time.is_reduced_order,
         motion_is_synthetic=motion_is_synthetic,
+        transfer_route=tcfg.route,
+        transfer_is_validated=transfer_is_validated,
+        transfer_source=transfer_source,
     )
 
     return FullResult(
@@ -210,6 +257,12 @@ def run_full_analysis(
         motion_freqs=f_w,
         motion_psd=pxx,
         stress_psd=stress_psd,
+        hf_freqs=hf_freqs,
+        hf_moment_mag=hf_moment_mag,
+        hf_stress_mag=hf_stress_mag,
+        hf_phase=hf_phase,
+        transfer_route=tcfg.route,
+        transfer_provenance=transfer_provenance,
         time_domain_block=td_block,
         annual_damage_rate_time=annual_rate_time,
         annual_damage_rate_spectral=annual_rate_spectral,
