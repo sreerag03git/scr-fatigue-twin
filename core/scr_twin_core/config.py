@@ -24,6 +24,7 @@ from .environment import (
     TEMP_FACTOR_BOUNDS,
     EnvironmentCorrection,
 )
+from .hang_off_kinematics import PorchGeometry
 from .section import PipeSection, submerged_weight
 from .sn import DNV_C203_IN_AIR, MeanStressModel
 
@@ -168,6 +169,29 @@ class EnvironmentConfig(BaseModel):
         )
 
 
+class HangOffConfig(BaseModel):
+    """Riser hang-off (porch) geometry for the 6-DOF -> hang-off resolution (Eq. 6).
+
+    Defaults are zero (the resolved vertical motion is then just the heave, i.e.
+    backwards-compatible with the heave-only path). Set the porch offset and riser
+    azimuth to exercise the pitch/roll lever-arm and surge/sway/yaw contributions.
+    """
+
+    model_config = {"extra": "forbid"}
+
+    porch_x: float = Field(default=0.0, ge=-200.0, le=200.0, description="Porch longitudinal offset [m], +fwd")
+    porch_y: float = Field(default=0.0, ge=-100.0, le=100.0, description="Porch transverse offset [m], +port")
+    porch_z: float = Field(default=0.0, ge=-100.0, le=100.0, description="Porch vertical offset [m], +up")
+    riser_azimuth_deg: float = Field(default=0.0, ge=-360.0, le=360.0, description="Riser departure azimuth [deg]")
+    exact_rotation: bool = Field(default=False, description="Exact finite-rotation transform vs small-angle Eq. 6")
+
+    def geometry(self) -> PorchGeometry:
+        return PorchGeometry(
+            x_p=self.porch_x, y_p=self.porch_y, z_p=self.porch_z,
+            riser_azimuth_deg=self.riser_azimuth_deg,
+        )
+
+
 class AnalysisConfig(BaseModel):
     """Top-level analysis configuration (deterministic; seed-driven)."""
 
@@ -176,6 +200,7 @@ class AnalysisConfig(BaseModel):
     riser: RiserConfig
     transfer: TransferConfig = Field(default_factory=TransferConfig)
     environment: EnvironmentConfig = Field(default_factory=EnvironmentConfig)
+    hang_off: HangOffConfig = Field(default_factory=HangOffConfig)
     block_duration_s: float = Field(default=1800.0, gt=0.0, description="Analysis block length [s]")
     n_monte_carlo: int = Field(default=10_000, ge=1, le=1_000_000)
     seed: int = Field(default=0, ge=0)

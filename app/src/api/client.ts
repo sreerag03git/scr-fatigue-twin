@@ -4,7 +4,7 @@
 import type {
   AnalysisConfig,
   AnalyzeResponse,
-  FleetEconomics,
+  ConditionalEconomics,
   IngestResponse,
   RunListResponse,
   SNClass,
@@ -46,7 +46,7 @@ export const api = {
   referenceConfig: () => req<AnalysisConfig>("/api/reference-config"),
   snClasses: () => req<SNClass[]>("/api/sn-classes"),
   validation: () => req<ValidationResponse>("/api/validation"),
-  economics: () => req<FleetEconomics>("/api/economics"),
+  economics: () => req<ConditionalEconomics>("/api/economics"),
 
   analyzeSynthetic: (config: AnalysisConfig, synthetic: SyntheticParams) =>
     req<AnalyzeResponse>("/api/analyze/synthetic", {

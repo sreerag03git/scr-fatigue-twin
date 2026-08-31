@@ -35,7 +35,13 @@ from fpdf import FPDF  # noqa: E402
 
 from scr_twin_core import ingest as ingest_mod  # noqa: E402
 from scr_twin_core import validation as validation_mod  # noqa: E402
-from scr_twin_core.config import AnalysisConfig, EnvironmentConfig, RiserConfig, TransferConfig  # noqa: E402
+from scr_twin_core.config import (  # noqa: E402
+    AnalysisConfig,
+    EnvironmentConfig,
+    HangOffConfig,
+    RiserConfig,
+    TransferConfig,
+)
 from server import service  # noqa: E402
 
 # --------------------------------------------------------------------------- #
@@ -195,23 +201,47 @@ def gates() -> list[dict]:
     return [g.as_dict() for g in validation_mod.run_all_gates(seed=0)]
 
 
+def _imported_tf(cfg: AnalysisConfig, transfer_bytes: bytes | None):
+    """Parse the imported H(f) when the route needs it. Returns (tf, error)."""
+    if cfg.transfer.route != "imported":
+        return None, None
+    if not transfer_bytes:
+        return None, "Transfer route 'imported' selected but no validated H(f) table uploaded."
+    try:
+        return service.load_transfer(transfer_bytes), None
+    except ValueError as exc:
+        return None, f"Invalid H(f) table - {exc}"
+
+
 @st.cache_data(show_spinner=False)
 def analyze_synthetic(config_json: str, hs: float, tp: float, gamma: float,
-                      duration: float, fs: float, seed: int) -> dict:
+                      duration: float, fs: float, seed: int, heading: float,
+                      transfer_bytes: bytes | None = None) -> dict:
     cfg = AnalysisConfig.model_validate_json(config_json)
-    heave, fsr = service.make_synthetic(hs, tp, gamma, duration, fs, seed)
-    return service.analyze(cfg, heave, fsr, is_synthetic=True)
+    tf, err = _imported_tf(cfg, transfer_bytes)
+    if err:
+        return {"error": err}
+    channels, fsr = service.make_synthetic_6dof(hs, tp, gamma, duration, fs, seed, heading)
+    return service.analyze(cfg, channels["heave"], fsr, is_synthetic=True,
+                           imported_tf=tf, channels=channels)
 
 
 @st.cache_data(show_spinner=False)
-def analyze_upload(config_json: str, file_bytes: bytes) -> dict:
+def analyze_upload(config_json: str, file_bytes: bytes,
+                   transfer_bytes: bytes | None = None) -> dict:
     cfg = AnalysisConfig.model_validate_json(config_json)
+    tf, err = _imported_tf(cfg, transfer_bytes)
+    if err:
+        return {"error": err}
     rec = ingest_mod.load_mru_csv(io.BytesIO(file_bytes))
     if not rec.health.ok:
         return {"error": "; ".join(rec.health.flags) or "data health check failed",
                 "health": rec.health.as_dict()}
+    # Uploaded multi-DOF records drive the full Eq.6 resolution; heave-only files
+    # collapse to the heave path (dof channels dict has a single entry).
     return service.analyze(cfg, rec.channels["heave"], rec.fs,
-                           is_synthetic=False, data_health=rec.health.as_dict())
+                           is_synthetic=False, data_health=rec.health.as_dict(),
+                           imported_tf=tf, channels=dict(rec.channels))
 
 
 @st.cache_data(show_spinner=False)
@@ -272,6 +302,35 @@ def spectra_fig(spec: dict) -> go.Figure:
     return f
 
 
+def transfer_fig(tf: dict) -> go.Figure:
+    """Layer-1 |H(f)| stress transfer (Fig 4): MPa of TDP hot-spot stress per m heave."""
+    f = _fig(250)
+    f.add_scatter(x=tf["freq"], y=tf["stress_mag"], line=dict(color=SIGNAL2, width=2.2),
+                  fill="tozeroy", fillcolor="rgba(15,143,156,0.08)", name="|H|")
+    # Highlight the wave-frequency band the paper validates over (0.05-0.30 Hz).
+    f.add_vrect(x0=0.05, x1=0.30, fillcolor="rgba(180,121,26,0.06)", line_width=0)
+    f.update_layout(xaxis=dict(title="Frequency [Hz]", gridcolor=GRID, zeroline=False, range=[0, 0.4]),
+                    yaxis=dict(title="|H| [MPa per m heave]", gridcolor=GRID, zeroline=False, rangemode="tozero"))
+    return f
+
+
+def dof_fig(contrib: dict) -> go.Figure:
+    """Per-DOF share of the vertical hang-off motion variance (which DOF drives fatigue)."""
+    items = sorted(contrib.items(), key=lambda kv: kv[1], reverse=True)
+    names = [k.upper() for k, _ in items]
+    vals = [100.0 * v for _, v in items]
+    colors = [SIGNAL2 if k == "heave" else AMBER if k in ("pitch", "roll") else "#8aa0ad"
+              for k, _ in items]
+    f = _fig(200)
+    f.add_bar(y=names, x=vals, orientation="h", marker_color=colors,
+              text=[f"{v:.1f}%" for v in vals], textposition="outside", cliponaxis=False)
+    f.update_layout(
+        xaxis=dict(title="% of hang-off motion variance", gridcolor=GRID, zeroline=False,
+                   range=[0, (max(vals) * 1.28) if vals else 1.0]),
+        yaxis=dict(autorange="reversed"), margin=dict(l=64, r=30, t=10, b=40))
+    return f
+
+
 def fan_fig(fan: dict, p50: float, upto: int | None = None) -> go.Figure:
     f = _fig(330)
     n = len(fan["years"]) if upto is None else upto
@@ -313,6 +372,40 @@ def pof_fig(insp: dict) -> go.Figure:
                 annotation_text="inspect", annotation_font_color=SIGNAL2, annotation_font_size=9)
     f.update_layout(xaxis=dict(title="year", gridcolor=GRID, zeroline=False),
                     yaxis=dict(title="P(fail)", gridcolor=GRID, zeroline=False, rangemode="tozero"))
+    return f
+
+
+def econ_fig(econ: dict) -> go.Figure:
+    """Fig 11(b): conditional net fleet value dC vs phi, with a P5-P95 cost band.
+
+    The sensor only pays where the curve is above zero - to the right of the
+    break-even phi*. The fleet's own (endogenous) phi is marked on the x-axis.
+    """
+    f = _fig(250)
+    phi = econ["phi_grid"]
+    p5 = [v / 1e6 for v in econ["fleet_delta_c_p5_usd"]]
+    p50 = [v / 1e6 for v in econ["fleet_delta_c_p50_usd"]]
+    p95 = [v / 1e6 for v in econ["fleet_delta_c_p95_usd"]]
+    f.add_scatter(x=phi, y=p95, line=dict(width=0), hoverinfo="skip")
+    f.add_scatter(x=phi, y=p5, fill="tonexty", line=dict(width=0),
+                  fillcolor="rgba(15,143,156,0.13)", hoverinfo="skip")
+    f.add_scatter(x=phi, y=p50, line=dict(color=SIGNAL2, width=2.4), name="net dC")
+    f.add_hline(y=0.0, line=dict(color=TEXT, width=0.9, dash="dot"))
+    be = econ.get("breakeven_phi")
+    if be is not None and np.isfinite(be):
+        f.add_vline(x=be, line=dict(color=ALARM, width=1.2, dash="dash"),
+                    annotation_text=f"break-even φ*={be:.2f}", annotation_font_color=ALARM,
+                    annotation_font_size=9, annotation_position="top left")
+    op = econ.get("phi")
+    if op is not None:
+        col = GOOD if econ.get("net_positive") else AMBER
+        f.add_vline(x=op, line=dict(color=col, width=1.6),
+                    annotation_text=f"fleet φ={op:.2f}", annotation_font_color=col,
+                    annotation_font_size=9, annotation_position="bottom right")
+    f.update_layout(
+        xaxis=dict(title="φ = P(asset ages slower than design)", gridcolor=GRID,
+                   zeroline=False, range=[0, 1]),
+        yaxis=dict(title="Net fleet value ΔC [US$M, 20yr]", gridcolor=GRID, zeroline=False))
     return f
 
 
@@ -433,10 +526,12 @@ def build_pdf(config_json: str, source_kind: str, payload_json: str) -> bytes:
     ])
     pdf.ln(1)
     section("Decision")
+    _net = f"${econ['fleet_delta_c_usd']/1e6:+.1f}M ({econ['n_units']}u, {econ['horizon_yr']:.0f}yr)"
+    _phi_src = "posterior" if econ.get("phi_is_endogenous") else "break-even ref"
     kv([
         ("Next inspection", f"{insp['next_inspection_year']:.1f} yr  (target PoF {insp['target_pof']*100:.1f}%)"),
-        ("Fleet saving (20u, 20yr)", f"${econ['fleet_saving_low_usd']/1e6:.1f}M - ${econ['fleet_saving_high_usd']/1e6:.1f}M"),
-        ("Sensor payback", f"{econ['payback_low_yr']:.1f} - {econ['payback_high_yr']:.1f} yr"),
+        ("Conditional net value dC", f"{_net}  ->  {'net gain' if econ.get('net_positive') else 'net cost'}"),
+        ("Fleet phi / break-even phi*", f"{econ['phi']:.2f} ({_phi_src})  /  {econ['breakeven_phi']:.2f}"),
     ])
     pdf.ln(2)
 
@@ -532,6 +627,9 @@ if source.startswith("Synthetic"):
     synth["duration"] = c2.number_input("Duration [s]", 300.0, 3600.0, 1800.0, 60.0)
     synth["fs"] = c1.number_input("fs [Hz]", 1.0, 10.0, 4.0, 1.0)
     synth["seed"] = c2.number_input("Seed", 0, 99_999_999, 20240705, 1)
+    synth["heading"] = st.sidebar.slider(
+        "Wave heading [deg] (0 = head, 90 = beam)", 0.0, 90.0, 20.0, 5.0,
+        help="Drives the 6-DOF mix: head seas -> pitch/heave/surge; beam -> roll/sway.")
 else:
     up = st.sidebar.file_uploader("MRU CSV (time + heave/pitch...)", type=["csv"])
     if up is not None:
@@ -548,9 +646,32 @@ with st.sidebar.expander("Steel catenary riser", expanded=True):
     scf = st.number_input("SCF", 1.0, 5.0, ref.scf, 0.05)
     sn_class = st.selectbox("DNV S-N class", SN_CLASSES, index=SN_CLASSES.index(ref.sn_class))
 
-with st.sidebar.expander("Transfer function (Layer 1)"):
-    route = st.radio("Route", ["reference", "analytic"], horizontal=True,
-                     help="Reference = illustrative Route-2 table. Analytic = reduced-order Route-1.")
+with st.sidebar.expander("Hang-off geometry (6-DOF, Eq. 6)"):
+    st.caption("Resolves 6-DOF MRU motion to the porch: z_ho = heave - x_p*pitch + y_p*roll.")
+    porch_x = st.number_input("Porch offset x [m] (+fwd)", -100.0, 100.0, 20.0, 1.0)
+    porch_y = st.number_input("Porch offset y [m] (+port)", -50.0, 50.0, 0.0, 1.0)
+    porch_z = st.number_input("Porch offset z [m] (+up)", -50.0, 50.0, 25.0, 1.0)
+    azimuth = st.number_input("Riser azimuth [deg]", -180.0, 180.0, 0.0, 5.0)
+    exact_rot = st.checkbox("Exact finite-rotation (vs small-angle Eq. 6)", value=False)
+
+with st.sidebar.expander("Transfer function (Layer 1)", expanded=True):
+    route = st.radio(
+        "H(f) route", ["reference", "analytic", "imported"], horizontal=True,
+        help="imported = validated vendor H(f) (OrcaFlex/RIFLEX/DeepLines). "
+             "reference = illustrative table (NOT data). analytic = reduced-order Route-1.",
+    )
+    transfer_bytes: bytes | None = None
+    if route == "imported":
+        hf_up = st.file_uploader("Validated H(f) CSV", type=["csv"], key="hf_csv")
+        if hf_up is not None:
+            transfer_bytes = hf_up.getvalue()
+        st.caption("Complex TDP moment transfer. Columns `freq_hz, magnitude, phase_rad` "
+                   "(or `freq, re, im`); `# key: value` header lines carry provenance. "
+                   "Example: `data/samples/example_transfer_function.csv`.")
+    elif route == "reference":
+        st.caption("Illustrative wave-band table - realistic magnitude but **not project data**.")
+    else:
+        st.caption("Reduced-order Morison model - a documented engineering approximation.")
 
 with st.sidebar.expander("Arabian Gulf correction", expanded=True):
     env_on = st.toggle("Apply correction", value=True)
@@ -570,6 +691,8 @@ try:
             coating_density=ref.coating_density, is_reference_preset=False,
         ),
         transfer=TransferConfig(route=route),
+        hang_off=HangOffConfig(porch_x=porch_x, porch_y=porch_y, porch_z=porch_z,
+                               riser_azimuth_deg=azimuth, exact_rotation=exact_rot),
         environment=EnvironmentConfig(enabled=env_on, temperature_factor=tfac, salinity_factor=sfac),
         n_monte_carlo=int(n_mc), seed=int(seed),
     )
@@ -611,9 +734,10 @@ run_clicked = run_col.button("▶  Run analysis", type="primary", width="stretch
 # --------------------------------------------------------------------------- #
 if is_synth:
     payload = analyze_synthetic(cfg.model_dump_json(), synth["hs"], synth["tp"], synth["gamma"],
-                                synth["duration"], synth["fs"], int(synth["seed"]))
+                                synth["duration"], synth["fs"], int(synth["seed"]),
+                                synth["heading"], transfer_bytes)
 elif upload_bytes is not None:
-    payload = analyze_upload(cfg.model_dump_json(), upload_bytes)
+    payload = analyze_upload(cfg.model_dump_json(), upload_bytes, transfer_bytes)
 else:
     st.info("Upload an MRU CSV in the sidebar, or switch to the synthetic demo generator, then press Run analysis.")
     st.stop()
@@ -756,6 +880,49 @@ tf.update_layout(xaxis=dict(title="t [s]", gridcolor=GRID, zeroline=False),
                  yaxis=dict(title="heave [m]", gridcolor=GRID, zeroline=False))
 sc2.plotly_chart(tf, width="stretch", config={"displayModeBar": False})
 
+# --- Layer 1: transfer function H(f) (Fig 4) + validated/illustrative badge ---
+# --- Layer 0: 6-DOF hang-off resolution (Eq. 6) - which DOF drives the fatigue ---
+_dof = payload.get("dof_contributions", {"heave": 1.0})
+if len(_dof) > 1:
+    st.markdown('<div class="sec">Layer 0 - 6-DOF hang-off resolution (Eq. 6) &middot; '
+                'which DOF drives TDP fatigue</div>', unsafe_allow_html=True)
+    kc1, kc2 = dcols([3, 2])
+    kc1.plotly_chart(dof_fig(_dof), width="stretch", config={"displayModeBar": False})
+    with kc2:
+        _top = max(_dof.items(), key=lambda kv: kv[1])
+        st.markdown(kpi_row([
+            kpi("Porch offset x", f'{cfg.hang_off.porch_x:.0f}', "m"),
+            kpi("Dominant DOF", _top[0].upper(), f'{100*_top[1]:.0f}%', "amber"),
+        ]), unsafe_allow_html=True)
+        st.caption("Resolved via z_ho = heave - x_p*pitch + y_p*roll (small-angle Eq. 6). "
+                   "Shares are of the vertical hang-off motion variance.")
+
+st.markdown('<div class="sec">Layer 1 - transfer function H(f) &middot; MRU motion &rarr; TDP stress</div>',
+            unsafe_allow_html=True)
+_tf = payload["transfer"]
+_prov = _tf.get("provenance", {})
+if _tf["is_validated"]:
+    _badge = '<span class="tag pass">VALIDATED (project)</span>'
+    _src = f' &nbsp;<span class="foot">route: imported &middot; {_prov.get("source_tool", "")} ' \
+           f'{_prov.get("tool_version", "")} &middot; {_prov.get("load_case", "")}</span>'
+else:
+    _badge = '<span class="tag syn">ILLUSTRATIVE / approximate - NOT project data</span>'
+    _src = f' &nbsp;<span class="foot">route: {_tf["route"]}</span>'
+st.markdown(f'<div style="margin:-2px 0 8px">{_badge}{_src}</div>', unsafe_allow_html=True)
+hc1, hc2 = dcols([3, 2])
+hc1.plotly_chart(transfer_fig(_tf), width="stretch", config={"displayModeBar": False})
+with hc2:
+    _peak = max(_tf["stress_mag"]) if _tf["stress_mag"] else 0.0
+    _ipk = _tf["stress_mag"].index(_peak) if _peak else 0
+    st.markdown(kpi_row([
+        kpi("Peak |H|", f"{_peak:.1f}", "MPa/m", "sig"),
+        kpi("at frequency", f'{_tf["freq"][_ipk]:.3f}', "Hz"),
+    ]), unsafe_allow_html=True)
+    if not _tf["is_validated"]:
+        st.caption("For a defensible TDP stress, import a validated OrcaFlex/RIFLEX/DeepLines "
+                   "H(f) (sidebar -> Transfer function -> route = imported). The reference and "
+                   "analytic routes are an illustrative table and a reduced-order model.")
+
 st.markdown('<div class="sec">Layer 2 - rainflow &middot; S-N &middot; Miner</div>', unsafe_allow_html=True)
 st.markdown(kpi_row([
     kpi("Annual damage (time)", f'{dmg["annual_rate_time"]:.2e}', "/yr", "amber"),
@@ -771,20 +938,43 @@ pc1, pc2 = dcols([3, 2])
 pc1.plotly_chart(fan_fig(payload["bayesian_fan"], post["p50"]), width="stretch", config={"displayModeBar": False})
 pc2.plotly_chart(pdf_hist_fig(post), width="stretch", config={"displayModeBar": False})
 
-st.markdown('<div class="sec">Decision - risk-based inspection &middot; fleet economics</div>', unsafe_allow_html=True)
+st.markdown('<div class="sec">Decision - risk-based inspection schedule</div>', unsafe_allow_html=True)
 dc1, dc2 = dcols([3, 2])
 dc1.plotly_chart(pof_fig(insp), width="stretch", config={"displayModeBar": False})
 with dc2:
     st.markdown(kpi_row([
-        kpi("Fleet saving (20u, 20yr)",
-            f'${econ["fleet_saving_low_usd"]/1e6:.1f}-{econ["fleet_saving_high_usd"]/1e6:.1f}M', "", "sig"),
-        kpi("Sensor payback", f'{econ["payback_low_yr"]:.1f}-{econ["payback_high_yr"]:.1f}', "yr"),
+        kpi("Next inspection", f'{insp["next_inspection_year"]:.1f}', "yr", "sig"),
+        kpi("Target PoF", f'{insp["target_pof"]*100:.1f}', "%"),
     ]), unsafe_allow_html=True)
     st.markdown(kpi_row([
-        kpi("Target PoF", f'{insp["target_pof"]*100:.1f}', "%"),
         kpi("PoF at inspection", f'{insp["pof_at_next"]*100:.2f}', "%",
             "alarm" if insp["pof_at_next"] > insp["target_pof"] * 1.05 else ""),
     ]), unsafe_allow_html=True)
+
+# --- Conditional CBM economics (Eq. 11): value depends on phi, not a flat saving ---
+_net_tone = "sig" if econ.get("net_positive") else "alarm"
+_net = econ["fleet_delta_c_usd"] / 1e6
+_phi_src = "from posterior" if econ.get("phi_is_endogenous") else "break-even ref"
+st.markdown('<div class="sec">Conditional economics (Eq. 11) &middot; discounted value of monitoring vs &phi;</div>',
+            unsafe_allow_html=True)
+ec1, ec2 = dcols([3, 2])
+ec1.plotly_chart(econ_fig(econ), width="stretch", config={"displayModeBar": False})
+with ec2:
+    st.markdown(kpi_row([
+        kpi(f"Net fleet value ΔC ({econ['n_units']}u, {econ['horizon_yr']:.0f}yr)",
+            f'{_net:+.1f}', "US$M", _net_tone),
+        kpi("per unit", f'{econ["per_unit_delta_c_usd"]/1e6:+.2f}', "US$M", _net_tone),
+    ]), unsafe_allow_html=True)
+    st.markdown(kpi_row([
+        kpi(f"Fleet φ ({_phi_src})", f'{econ["phi"]:.2f}', "", "amber"),
+        kpi("Break-even φ*", f'{econ["breakeven_phi"]:.2f}'),
+    ]), unsafe_allow_html=True)
+    st.caption(
+        "φ = P(asset ages slower than design), estimated from this run's remaining-life "
+        f"posterior. The sensor pays only when φ > φ*={econ['breakeven_phi']:.2f}; at r="
+        f"{econ['discount_rate']*100:.0f}% discount this fleet's φ={econ['phi']:.2f} makes it a "
+        f"net {'gain' if econ.get('net_positive') else 'cost'}. Discounting replaces the "
+        "retracted flat headline saving.")
 
 vc1, vc2 = dcols([3, 2])
 with vc1:

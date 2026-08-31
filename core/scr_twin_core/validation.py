@@ -19,7 +19,11 @@ from .bayesian import BayesianRateEstimator
 from .catenary import solve_plain_catenary
 from .config import AnalysisConfig, RiserConfig
 from .environment import EnvironmentCorrection
-from .inspection import EconomicsModel, fleet_economics
+from .inspection import (
+    ConditionalEconomicsModel,
+    breakeven_phi,
+    fleet_economics_conditional,
+)
 from .montecarlo import UncertaintyModel, accumulated_damage_divergence
 from .pipeline import run_full_analysis
 from .rainflow import count_cycles
@@ -136,19 +140,25 @@ def _gate_bayesian() -> GateResult:
     )
 
 
-def _gate_fleet_economics() -> GateResult:
-    e = fleet_economics(EconomicsModel())
-    low_m, high_m = e.fleet_saving_low_usd / 1e6, e.fleet_saving_high_usd / 1e6
-    ok = (
-        5.5 <= low_m <= 8.0
-        and 33.0 <= high_m <= 40.0
-        and 1.0 <= e.payback_low_yr <= 6.0
-        and 1.0 <= e.payback_high_yr <= 6.5
-    )
+def _gate_conditional_economics() -> GateResult:
+    """Conditional CBM economics (Eq. 11): honest break-even, no flat headline saving.
+
+    Asserts the structural facts that replace the retracted flat "$6.6-36.5M":
+    a fast-ageing fleet (phi=0) *loses* money, a certainly-slower fleet (phi=1)
+    saves, dC(phi) rises monotonically, and the break-even phi* sits in a
+    "you must be clearly confident before the sensor pays" band.
+    """
+    model = ConditionalEconomicsModel()
+    e = fleet_economics_conditional(model, n_cost_mc=0)  # deterministic curve for the gate
+    phi_star = breakeven_phi(model)
+    dc0, dc1 = e.fleet_delta_c_p50_usd[0] / 1e6, e.fleet_delta_c_p50_usd[-1] / 1e6
+    curve = e.fleet_delta_c_p50_usd
+    monotone = all(b > a for a, b in zip(curve, curve[1:], strict=False))
+    ok = (0.50 <= phi_star <= 0.75) and dc0 < 0.0 and dc1 > 0.0 and monotone
     return GateResult(
-        "Fleet economics", "calibration", ok,
-        "$6.6-36.5M / 20yr / 20 units, payback 1-6yr",
-        f"${low_m:.1f}M-${high_m:.1f}M, payback {e.payback_low_yr:.1f}-{e.payback_high_yr:.1f}yr",
+        "Conditional economics", "calibration", ok,
+        "break-even phi* in 0.50-0.75; loss at phi=0, gain at phi=1",
+        f"phi*={phi_star:.2f}, fleet dC {dc0:+.1f}M(phi=0) -> {dc1:+.1f}M(phi=1), monotone={monotone}",
     )
 
 
@@ -177,7 +187,7 @@ def run_all_gates(seed: int = 0) -> list[GateResult]:
         _gate_environment,
         lambda: _gate_divergence(seed),
         _gate_bayesian,
-        _gate_fleet_economics,
+        _gate_conditional_economics,
         _gate_determinism,
     ]
     return [c() for c in checks]

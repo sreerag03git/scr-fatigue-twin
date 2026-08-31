@@ -36,10 +36,19 @@ def test_validation_all_gates_pass():
     assert r["total"] >= 9
 
 
-def test_economics_in_paper_range():
+def test_economics_conditional_breakeven():
     e = client.get("/api/economics").json()
-    assert 5.5e6 <= e["fleet_saving_low_usd"] <= 8.0e6
-    assert 33e6 <= e["fleet_saving_high_usd"] <= 40e6
+    # Honest conditional story (Eq. 11): a break-even on phi, not a flat saving.
+    assert 0.50 <= e["breakeven_phi"] <= 0.75
+    assert e["fleet_delta_c_p50_usd"][0] < 0.0 < e["fleet_delta_c_p50_usd"][-1]
+    assert "fleet_saving_low_usd" not in e  # retracted flat headline is gone
+
+
+def test_economics_post_respects_operating_phi():
+    slow = client.post("/api/economics", json={"phi": 0.95}).json()
+    fast = client.post("/api/economics", json={"phi": 0.05}).json()
+    assert slow["fleet_delta_c_usd"] > fast["fleet_delta_c_usd"]
+    assert slow["net_positive"] is True and fast["net_positive"] is False
 
 
 def test_analyze_synthetic_full_payload(config):

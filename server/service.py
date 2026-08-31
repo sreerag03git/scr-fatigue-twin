@@ -13,10 +13,15 @@ import numpy as np
 
 from scr_twin_core.bayesian import BayesianRateEstimator
 from scr_twin_core.config import AnalysisConfig
-from scr_twin_core.inspection import EconomicsModel, fleet_economics, next_inspection
+from scr_twin_core.inspection import (
+    ConditionalEconomicsModel,
+    fleet_economics_conditional,
+    next_inspection,
+)
 from scr_twin_core.miner import SECONDS_PER_YEAR
 from scr_twin_core.pipeline import FullResult, run_full_analysis
-from scr_twin_core.synthetic import synthetic_mru_motion
+from scr_twin_core.synthetic import synthetic_mru_6dof, synthetic_mru_motion
+from scr_twin_core.transfer import InterpolatedTransferFunction, load_transfer_csv
 
 MAX_POINTS = 280  # cap transported array length for smooth, light charts
 
@@ -99,6 +104,24 @@ def _spectrum_payload(result: FullResult) -> dict[str, list[float]]:
     }
 
 
+def _transfer_payload(result: FullResult) -> dict[str, Any]:
+    """The Layer-1 |H(f)| curve (Fig 4) plus route + validated/illustrative flag."""
+    return {
+        "freq": decimate(np.asarray(result.hf_freqs), 200),
+        "stress_mag": decimate(np.asarray(result.hf_stress_mag), 200),
+        "moment_mag": decimate(np.asarray(result.hf_moment_mag), 200),
+        "phase": decimate(np.asarray(result.hf_phase), 200),
+        "route": result.transfer_route,
+        "is_validated": bool(result.transfer_provenance.get("is_validated", False)),
+        "provenance": result.transfer_provenance,
+    }
+
+
+def load_transfer(data: bytes | str, **overrides: Any) -> InterpolatedTransferFunction:
+    """Parse an imported complex H(f) CSV into a transfer function (raises on bad input)."""
+    return load_transfer_csv(data, **overrides)
+
+
 def _posterior_payload(result: FullResult) -> dict[str, Any]:
     mc = result.monte_carlo
     counts, edges = mc.histogram(48)
@@ -119,9 +142,18 @@ def analyze(
     *,
     is_synthetic: bool,
     data_health: dict[str, Any] | None = None,
+    imported_tf: InterpolatedTransferFunction | None = None,
+    channels: dict[str, np.ndarray] | None = None,
 ) -> dict[str, Any]:
-    """Run the full chain and assemble the complete dashboard payload."""
-    result = run_full_analysis(config, heave, fs, motion_is_synthetic=is_synthetic)
+    """Run the full chain and assemble the complete dashboard payload.
+
+    When ``channels`` (6-DOF) is supplied the hang-off motion is resolved via
+    Eq. 6; otherwise ``heave`` alone drives the chain.
+    """
+    result = run_full_analysis(
+        config, heave, fs, motion_is_synthetic=is_synthetic,
+        imported_tf=imported_tf, motion_channels=channels,
+    )
     mc = result.monte_carlo
 
     plan = next_inspection(mc.life_years, target_pof=1e-2, horizon_year=float(max(60.0, mc.p90)))
@@ -129,7 +161,13 @@ def analyze(
     pof_years = np.linspace(0.5, horizon, 60)
     pof_vals = [float(np.mean(mc.life_years <= t)) for t in pof_years]
 
-    econ = fleet_economics(EconomicsModel())
+    # Conditional CBM economics (Eq. 11): phi is estimated endogenously from this
+    # run's own remaining-life posterior (P(life > design life)), not assumed.
+    econ = fleet_economics_conditional(
+        ConditionalEconomicsModel(),
+        life_samples=mc.life_years,
+        design_life_years=result.deterministic_life_years,
+    )
     rate_std = float(np.std(mc.damage_rate_per_year))
     fan = bayesian_life_fan(result.annual_damage_rate_time, rate_std)
 
@@ -139,6 +177,8 @@ def analyze(
             "tz": result.sea_state.tz, "gamma": result.sea_state.gamma,
         },
         "spectrum": _spectrum_payload(result),
+        "transfer": _transfer_payload(result),
+        "dof_contributions": result.dof_contributions,
         "damage": {
             "annual_rate_time": result.annual_damage_rate_time,
             "annual_rate_spectral": result.annual_damage_rate_spectral,
@@ -176,6 +216,16 @@ def make_synthetic(hs: float, tp: float, gamma: float, duration: float, fs: floa
     """Generate a deterministic synthetic heave record (badged synthetic upstream)."""
     m = synthetic_mru_motion(duration=duration, fs=fs, hs=hs, tp=tp, gamma=gamma, seed=seed)
     return m.heave, m.fs
+
+
+def make_synthetic_6dof(
+    hs: float, tp: float, gamma: float, duration: float, fs: float, seed: int, heading_deg: float,
+) -> tuple[dict[str, np.ndarray], float]:
+    """Generate a deterministic synthetic 6-DOF MRU record (channels dict + fs)."""
+    m = synthetic_mru_6dof(
+        duration=duration, fs=fs, hs=hs, tp=tp, gamma=gamma, seed=seed, heading_deg=heading_deg
+    )
+    return m.channels, m.fs
 
 
 def stream_seconds_per_year() -> float:

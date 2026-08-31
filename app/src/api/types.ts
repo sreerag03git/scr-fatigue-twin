@@ -99,7 +99,7 @@ export interface AnalyzeResponse {
     next_inspection_year: number; target_pof: number; pof_at_next: number;
     limited_by_horizon: boolean; pof_years: number[]; pof_vals: number[];
   };
-  economics: FleetEconomics;
+  economics: ConditionalEconomics;
   provenance: Provenance;
   data_health: DataHealth | null;
   trace: { time: number[]; heave: number[] };
@@ -107,15 +107,24 @@ export interface AnalyzeResponse {
   source?: { kind: string; [k: string]: unknown };
 }
 
-export interface FleetEconomics {
-  per_unit_saving_low_usd: number;
-  per_unit_saving_high_usd: number;
-  fleet_saving_low_usd: number;
-  fleet_saving_high_usd: number;
-  payback_low_yr: number;
-  payback_high_yr: number;
-  baseline_inspection_cost_usd: number;
-  monitoring_cost_usd: number;
+export interface ConditionalEconomics {
+  discount_rate: number;
+  horizon_yr: number;
+  n_units: number;
+  breakeven_phi: number;
+  phi: number;
+  phi_is_endogenous: boolean;
+  per_unit_delta_c_usd: number;
+  fleet_delta_c_usd: number;
+  net_positive: boolean;
+  pv_baseline_usd: number;
+  pv_sensor_usd: number;
+  pv_cbm_slow_usd: number;
+  pv_cbm_fast_usd: number;
+  phi_grid: number[];
+  fleet_delta_c_p50_usd: number[];
+  fleet_delta_c_p5_usd: number[];
+  fleet_delta_c_p95_usd: number[];
 }
 
 export interface Gate {

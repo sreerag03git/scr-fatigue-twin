@@ -26,7 +26,7 @@ from fastapi.staticfiles import StaticFiles
 from scr_twin_core import __version__ as core_version
 from scr_twin_core.config import AnalysisConfig, RiserConfig
 from scr_twin_core.ingest import IngestedMRU, load_mru_csv, load_mru_parquet
-from scr_twin_core.inspection import EconomicsModel, fleet_economics
+from scr_twin_core.inspection import ConditionalEconomicsModel, fleet_economics_conditional
 from scr_twin_core.sn import DNV_C203_IN_AIR
 from scr_twin_core.validation import run_all_gates
 
@@ -81,6 +81,22 @@ app.add_middleware(
 
 # In-memory store of ingested uploads (local, no persistence, private by design).
 _UPLOADS: dict[str, IngestedMRU] = {}
+_TRANSFERS: dict[str, Any] = {}  # token -> InterpolatedTransferFunction (imported H(f))
+
+
+def _resolve_transfer(config: AnalysisConfig, transfer_token: str | None) -> Any:
+    """Return the imported H(f) for route 'imported' (400/404 if missing/unknown)."""
+    if config.transfer.route != "imported":
+        return None
+    if not transfer_token:
+        raise HTTPException(
+            status_code=400,
+            detail="Transfer route 'imported' requires a transfer_token; upload a validated H(f) via /api/transfer.",
+        )
+    tf = _TRANSFERS.get(transfer_token)
+    if tf is None:
+        raise HTTPException(status_code=404, detail="Unknown transfer token (re-upload the H(f) table).")
+    return tf
 
 
 @app.get("/api/health", response_model=HealthResponse)
@@ -120,13 +136,17 @@ def validation() -> dict[str, Any]:
 
 @app.get("/api/economics")
 def economics_default() -> dict[str, Any]:
-    return service.to_native(fleet_economics(EconomicsModel()).as_dict())
+    """Conditional CBM economics at the break-even phi (no run posterior supplied)."""
+    return service.to_native(fleet_economics_conditional(ConditionalEconomicsModel()).as_dict())
 
 
 @app.post("/api/economics")
 def economics(params: EconomicsParams) -> dict[str, Any]:
-    model = EconomicsModel(**params.model_dump())
-    return service.to_native(fleet_economics(model).as_dict())
+    """Conditional CBM economics for edited costs, at an optional operating phi."""
+    body = params.model_dump()
+    phi = body.pop("phi", None)
+    model = ConditionalEconomicsModel(**body)
+    return service.to_native(fleet_economics_conditional(model, phi=phi).as_dict())
 
 
 @app.post("/api/analyze/synthetic")
@@ -134,7 +154,8 @@ def analyze_synthetic(req: AnalyzeSyntheticRequest) -> dict[str, Any]:
     try:
         s: SyntheticParams = req.synthetic
         heave, fs = service.make_synthetic(s.hs, s.tp, s.gamma, s.duration, s.fs, s.seed)
-        payload = service.analyze(req.config, heave, fs, is_synthetic=True)
+        imported_tf = _resolve_transfer(req.config, req.transfer_token)
+        payload = service.analyze(req.config, heave, fs, is_synthetic=True, imported_tf=imported_tf)
         return _persist({"kind": "synthetic", **s.model_dump()}, req.config.model_dump(), payload)
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
@@ -161,6 +182,19 @@ async def ingest(file: UploadFile = File(...)) -> dict[str, Any]:
     return {"token": token, "health": rec.health.as_dict(), "preview": preview}
 
 
+@app.post("/api/transfer")
+async def transfer_upload(file: UploadFile = File(...)) -> dict[str, Any]:
+    """Upload a validated complex H(f) CSV; returns a token + parsed provenance."""
+    raw = await file.read()
+    try:
+        tf = service.load_transfer(raw)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=f"Invalid H(f) table: {exc}") from exc
+    token = uuid.uuid4().hex
+    _TRANSFERS[token] = tf
+    return {"token": token, "provenance": tf.provenance.as_dict()}
+
+
 @app.post("/api/analyze/upload")
 def analyze_upload(req: AnalyzeUploadRequest) -> dict[str, Any]:
     rec = _UPLOADS.get(req.token)
@@ -172,9 +206,10 @@ def analyze_upload(req: AnalyzeUploadRequest) -> dict[str, Any]:
             detail="Ingested record is not analysable: " + "; ".join(rec.health.flags),
         )
     try:
+        imported_tf = _resolve_transfer(req.config, req.transfer_token)
         payload = service.analyze(
             req.config, rec.channels["heave"], rec.fs,
-            is_synthetic=rec.is_synthetic, data_health=rec.health.as_dict(),
+            is_synthetic=rec.is_synthetic, data_health=rec.health.as_dict(), imported_tf=imported_tf,
         )
         return _persist({"kind": "upload", "channels": rec.health.channels}, req.config.model_dump(), payload)
     except ValueError as exc:

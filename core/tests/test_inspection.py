@@ -6,8 +6,6 @@ import numpy as np
 import pytest
 
 from scr_twin_core.inspection import (
-    EconomicsModel,
-    fleet_economics,
     next_inspection,
     pod_exponential,
     pod_lognormal,
@@ -53,20 +51,6 @@ def test_next_inspection_horizon_limited():
     plan = next_inspection(life, target_pof=1e-2, horizon_year=20)
     assert plan.limited_by_horizon
     assert plan.next_inspection_year == 20.0
-
-
-def test_fleet_economics_reproduces_paper():
-    e = fleet_economics(EconomicsModel())
-    assert 5.5e6 <= e.fleet_saving_low_usd <= 8.0e6
-    assert 33e6 <= e.fleet_saving_high_usd <= 40e6
-    assert 1.0 <= e.payback_low_yr <= 6.0
-    assert 1.0 <= e.payback_high_yr <= 6.5
-
-
-def test_economics_editable_parameters_flow_through():
-    base = fleet_economics(EconomicsModel())
-    dearer = fleet_economics(EconomicsModel(inspection_cost_usd=2.0e6))
-    assert dearer.fleet_saving_low_usd > base.fleet_saving_low_usd
 
 
 def test_next_inspection_huge_horizon_no_memory_blowup():
