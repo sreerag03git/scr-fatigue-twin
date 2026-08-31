@@ -31,6 +31,7 @@ import matplotlib.pyplot as plt  # noqa: E402
 import numpy as np  # noqa: E402
 import plotly.graph_objects as go  # noqa: E402
 import streamlit as st  # noqa: E402
+import streamlit.components.v1 as components  # noqa: E402
 from fpdf import FPDF  # noqa: E402
 
 from scr_twin_core import ingest as ingest_mod  # noqa: E402
@@ -520,6 +521,210 @@ def divergence_fan_fig(dfan: dict) -> go.Figure:
         xaxis=dict(title="year", gridcolor=GRID, zeroline=False),
         yaxis=dict(title="actual/design accumulated damage - 1 [%]", gridcolor=GRID, zeroline=False))
     return f
+
+
+def _svg_arrow(x1, y1, x2, y2, color, width=1.0, both=False):
+    """A dimension line with slim filled arrowheads (start optional)."""
+    start = ' marker-start="url(#dimstart)"' if both else ""
+    return (f'<line x1="{x1:.1f}" y1="{y1:.1f}" x2="{x2:.1f}" y2="{y2:.1f}" '
+            f'stroke="{color}" stroke-width="{width}" marker-end="url(#dimend)"{start}/>')
+
+
+def system_schematic_svg(payload: dict) -> str:
+    """Technical side-elevation of the SCR system as a hand-built engineering SVG.
+
+    Geometry (catenary, water depth, layback, hang-off angle) is the actual solved
+    result; the drawing adds dimension lines, a hatched seabed, a sheared current
+    profile, an FPSO line-art hull, and leader-line callouts. Rendered to scale.
+    """
+    cat = payload["catenary"]
+    xs = [float(v) for v in cat["x"]]
+    ys = [float(v) for v in cat["y"]]
+    depth = float(cat["water_depth"])
+    span = float(cat["horizontal_span"])
+    a_cat = float(cat["catenary_parameter"])
+    arc = float(cat["arc_length"])
+    hang_from_vert = 90.0 - float(cat["top_angle_deg"])
+    kappa_km = float(cat["tdp_curvature"]) * 1000.0
+
+    INK, DIM, TEAL, TEAL2 = "#2c3e46", "#8194a0", "#0b7079", "#0f8f9c"
+    AMBER, SAND, WATER = "#b4791a", "#a98b5e", "#eaf3f5"
+    FONT = "font-family='JetBrains Mono, Consolas, monospace'"
+
+    VBW, VBH = 1080, 700
+    ml, mr, mt, mb = 140, 210, 58, 112
+    aw, ah = VBW - ml - mr, VBH - mt - mb
+    scale = min(aw / span, ah / depth)
+    dw, dh = span * scale, depth * scale
+    ox = ml + (aw - dw) / 2.0
+    oy = mt + (ah - dh) / 2.0
+
+    def SX(xp: float) -> float:
+        return ox + xp * scale
+
+    def SY(yp: float) -> float:
+        return oy + dh - yp * scale
+
+    surf_y, bed_y = SY(depth), SY(0.0)
+    left_edge, right_edge = SX(0.0) - 0.16 * dw, SX(span) + 0.09 * dw
+    tdp = (SX(0.0), SY(0.0))
+    hang = (SX(span), SY(depth))
+    riser = " ".join(f"{SX(x):.1f},{SY(y):.1f}" for x, y in zip(xs, ys))
+
+    p = []
+    p.append(
+        f'<svg viewBox="0 0 {VBW} {VBH}" width="100%" xmlns="http://www.w3.org/2000/svg" '
+        f'preserveAspectRatio="xMidYMid meet" {FONT} font-size="13">'
+    )
+    p.append(
+        '<defs>'
+        '<marker id="dimend" markerWidth="10" markerHeight="10" refX="8.5" refY="4" orient="auto">'
+        f'<path d="M0,0.5 L9,4 L0,7.5 L2.6,4 Z" fill="{DIM}"/></marker>'
+        '<marker id="dimstart" markerWidth="10" markerHeight="10" refX="0.5" refY="4" orient="auto">'
+        f'<path d="M9,0.5 L0,4 L9,7.5 L6.4,4 Z" fill="{DIM}"/></marker>'
+        '<marker id="cur" markerWidth="9" markerHeight="9" refX="7" refY="3" orient="auto">'
+        f'<path d="M0,0 L7,3 L0,6 Z" fill="{TEAL2}"/></marker>'
+        '<pattern id="seabed" width="9" height="9" patternUnits="userSpaceOnUse" patternTransform="rotate(45)">'
+        f'<line x1="0" y1="0" x2="0" y2="9" stroke="{SAND}" stroke-width="1.1"/></pattern>'
+        '</defs>'
+    )
+    p.append(f'<rect x="0" y="0" width="{VBW}" height="{VBH}" fill="#ffffff"/>')
+
+    # Water column + hatched seabed + mud line + mean water level.
+    p.append(f'<rect x="{left_edge:.1f}" y="{surf_y:.1f}" width="{right_edge - left_edge:.1f}" '
+             f'height="{bed_y - surf_y:.1f}" fill="{WATER}"/>')
+    p.append(f'<rect x="{left_edge:.1f}" y="{bed_y:.1f}" width="{right_edge - left_edge:.1f}" '
+             f'height="{0.07 * dh:.1f}" fill="url(#seabed)"/>')
+    p.append(f'<line x1="{left_edge:.1f}" y1="{bed_y:.1f}" x2="{right_edge:.1f}" y2="{bed_y:.1f}" '
+             f'stroke="{SAND}" stroke-width="1.8"/>')
+    # Mean-water-level line with small wave ticks.
+    p.append(f'<line x1="{left_edge:.1f}" y1="{surf_y:.1f}" x2="{right_edge:.1f}" y2="{surf_y:.1f}" '
+             f'stroke="{TEAL2}" stroke-width="1.3"/>')
+    wl = ""
+    xx = left_edge
+    while xx < right_edge - 14:
+        wl += f'M{xx:.1f},{surf_y:.1f} q7,-5 14,0 '
+        xx += 14
+    p.append(f'<path d="{wl}" fill="none" stroke="{TEAL2}" stroke-width="0.8" opacity="0.5"/>')
+    p.append(f'<text x="{right_edge - 4:.1f}" y="{surf_y - 6:.1f}" text-anchor="end" '
+             f'fill="{TEAL2}" font-size="11">mean water level</text>')
+    p.append(f'<text x="{right_edge - 4:.1f}" y="{bed_y + 0.055 * dh:.1f}" text-anchor="end" '
+             f'fill="{SAND}" font-size="11">seabed</text>')
+
+    # Sheared current profile (left water column): wedge + arrows.
+    viv = payload.get("viv")
+    if viv and viv.get("enabled"):
+        cp = viv["current_profile"]
+        hh = [float(v) for v in cp["height"]]
+        ss = [float(v) for v in cp["speed"]]
+        umax = max(max(ss), 1e-6)
+        u0 = float(viv.get("current_surface_velocity", 0.0))
+        cur_x = left_edge + 6
+        length = 0.13 * dw
+        wedge = [f'{cur_x + (s / umax) * length:.1f},{SY(h):.1f}' for h, s in zip(hh, ss)]
+        wedge = [f'{cur_x:.1f},{surf_y:.1f}'] + wedge + [f'{cur_x:.1f},{bed_y:.1f}']
+        p.append(f'<polygon points="{" ".join(wedge)}" fill="rgba(15,143,156,0.10)" '
+                 f'stroke="{TEAL2}" stroke-width="0.8" stroke-dasharray="3 3"/>')
+        for i in range(1, len(hh) - 1, 4):
+            s = ss[i]
+            if s > 0.03 * umax:
+                p.append(f'<line x1="{cur_x:.1f}" y1="{SY(hh[i]):.1f}" '
+                         f'x2="{cur_x + (s / umax) * length:.1f}" y2="{SY(hh[i]):.1f}" '
+                         f'stroke="{TEAL2}" stroke-width="1.4" marker-end="url(#cur)"/>')
+        p.append(f'<text x="{cur_x:.1f}" y="{surf_y - 22:.1f}" fill="{TEAL2}" font-size="11">'
+                 f'current U(z)</text>')
+        p.append(f'<text x="{cur_x:.1f}" y="{surf_y - 9:.1f}" fill="{TEAL2}" font-size="10">'
+                 f'{u0:.2f} m/s surface</text>')
+
+    # The SCR catenary (real geometry) with TDP hot-spot marker.
+    p.append(f'<polyline points="{riser}" fill="none" stroke="{TEAL}" stroke-width="3.2" '
+             'stroke-linecap="round" stroke-linejoin="round"/>')
+    p.append(f'<circle cx="{tdp[0]:.1f}" cy="{tdp[1]:.1f}" r="5" fill="none" stroke="{AMBER}" stroke-width="1.6"/>')
+    p.append(f'<circle cx="{tdp[0]:.1f}" cy="{tdp[1]:.1f}" r="2.3" fill="{AMBER}"/>')
+
+    # FPSO line-art hull at the hang-off.
+    cx = hang[0]
+    lpx, dr, fb = 0.135 * dw, 0.05 * dh, 0.03 * dh
+    hull = (f'M{cx - lpx:.1f},{surf_y - fb:.1f} L{cx + lpx * 0.98:.1f},{surf_y - fb:.1f} '
+            f'L{cx + lpx:.1f},{surf_y - fb * 0.2:.1f} L{cx + lpx * 0.95:.1f},{surf_y + dr * 0.55:.1f} '
+            f'L{cx + lpx * 0.68:.1f},{surf_y + dr:.1f} L{cx - lpx * 0.68:.1f},{surf_y + dr:.1f} '
+            f'L{cx - lpx * 0.95:.1f},{surf_y + dr * 0.55:.1f} L{cx - lpx:.1f},{surf_y - fb * 0.2:.1f} Z')
+    p.append(f'<path d="{hull}" fill="#f4f7f8" stroke="{INK}" stroke-width="1.7" stroke-linejoin="round"/>')
+    # Deckhouse + a couple of deck details.
+    p.append(f'<rect x="{cx - lpx * 0.62:.1f}" y="{surf_y - fb - 0.055 * dh:.1f}" '
+             f'width="{lpx * 0.34:.1f}" height="{0.055 * dh:.1f}" fill="#e7edef" stroke="{INK}" stroke-width="1.3"/>')
+    p.append(f'<line x1="{cx + lpx * 0.15:.1f}" y1="{surf_y - fb:.1f}" x2="{cx + lpx * 0.15:.1f}" '
+             f'y2="{surf_y - fb - 0.05 * dh:.1f}" stroke="{INK}" stroke-width="1.2"/>')
+    # Riser porch / turret bracket where the SCR meets the hull.
+    p.append(f'<path d="M{cx - 8:.1f},{surf_y + dr * 0.3:.1f} L{cx + 8:.1f},{surf_y + dr * 0.3:.1f} '
+             f'L{cx:.1f},{surf_y + dr:.1f} Z" fill="{INK}"/>')
+    p.append(f'<text x="{cx:.1f}" y="{surf_y - fb - 0.055 * dh - 7:.1f}" text-anchor="middle" '
+             f'fill="{INK}" font-size="11">FPSO</text>')
+
+    # Hang-off angle arc (between the local vertical and the riser tangent).
+    import math as _m
+    px2, py2 = SX(xs[-2]), SY(ys[-2])
+    tang = _m.atan2(py2 - hang[1], px2 - hang[0])  # screen-space direction into the water
+    vert = _m.pi / 2.0  # straight down in screen space
+    r_arc = 0.16 * dh
+    ax0, ay0 = hang[0] + r_arc * _m.cos(vert), hang[1] + r_arc * _m.sin(vert)
+    ax1, ay1 = hang[0] + r_arc * _m.cos(tang), hang[1] + r_arc * _m.sin(tang)
+    p.append(f'<line x1="{hang[0]:.1f}" y1="{hang[1]:.1f}" x2="{hang[0]:.1f}" y2="{hang[1] + r_arc * 1.5:.1f}" '
+             f'stroke="{DIM}" stroke-width="0.9" stroke-dasharray="4 3"/>')
+    sweep = 1 if tang < vert else 0
+    p.append(f'<path d="M{ax0:.1f},{ay0:.1f} A{r_arc:.1f},{r_arc:.1f} 0 0 {sweep} {ax1:.1f},{ay1:.1f}" '
+             f'fill="none" stroke="{AMBER}" stroke-width="1.4"/>')
+    p.append(f'<text x="{hang[0] - r_arc - 4:.1f}" y="{hang[1] + r_arc * 1.9:.1f}" text-anchor="end" '
+             f'fill="{AMBER}" font-size="11">{hang_from_vert:.0f}&#176; from vertical</text>')
+
+    # Water-depth dimension (left).
+    ddx = max(left_edge - 34, 52)
+    p.append(_svg_arrow(ddx, surf_y, ddx, bed_y, DIM, 1.0, both=True))
+    p.append(f'<line x1="{left_edge:.1f}" y1="{surf_y:.1f}" x2="{ddx - 6:.1f}" y2="{surf_y:.1f}" stroke="{DIM}" stroke-width="0.8"/>')
+    p.append(f'<line x1="{left_edge:.1f}" y1="{bed_y:.1f}" x2="{ddx - 6:.1f}" y2="{bed_y:.1f}" stroke="{DIM}" stroke-width="0.8"/>')
+    p.append(f'<text x="{ddx - 9:.1f}" y="{(surf_y + bed_y) / 2:.1f}" text-anchor="middle" '
+             f'fill="{INK}" font-size="12" transform="rotate(-90 {ddx - 9:.1f} {(surf_y + bed_y) / 2:.1f})">'
+             f'water depth  d = {depth:.0f} m</text>')
+
+    # Horizontal layback (span) dimension (bottom).
+    dsy = bed_y + 0.07 * dh + 40
+    p.append(_svg_arrow(tdp[0], dsy, hang[0], dsy, DIM, 1.0, both=True))
+    p.append(f'<line x1="{tdp[0]:.1f}" y1="{bed_y + 0.07 * dh:.1f}" x2="{tdp[0]:.1f}" y2="{dsy + 6:.1f}" stroke="{DIM}" stroke-width="0.8"/>')
+    p.append(f'<line x1="{hang[0]:.1f}" y1="{surf_y:.1f}" x2="{hang[0]:.1f}" y2="{dsy + 6:.1f}" stroke="{DIM}" stroke-width="0.8" stroke-dasharray="4 3"/>')
+    p.append(f'<text x="{(tdp[0] + hang[0]) / 2:.1f}" y="{dsy - 8:.1f}" text-anchor="middle" '
+             f'fill="{INK}" font-size="12">horizontal layback  X = {span:.0f} m</text>')
+
+    # Leader-line callouts.
+    def leader(x, y, tx, ty, label, color, anchor="start"):
+        return (f'<line x1="{x:.1f}" y1="{y:.1f}" x2="{tx:.1f}" y2="{ty:.1f}" stroke="{color}" stroke-width="0.8"/>'
+                f'<circle cx="{x:.1f}" cy="{y:.1f}" r="2" fill="{color}"/>'
+                f'<text x="{tx + (4 if anchor == "start" else -4):.1f}" y="{ty:.1f}" '
+                f'text-anchor="{anchor}" fill="{color}" font-size="11">{label}</text>')
+
+    p.append(leader(tdp[0], tdp[1], tdp[0] + 0.10 * dw, tdp[1] + 0.055 * dh,
+                    f'touchdown point (TDP), &#954;={kappa_km:.2f}/km', AMBER))
+    # Sag point = lowest riser gradient region (~ mid, take the point of min slope).
+    mid = len(xs) // 3
+    sx_, sy_ = SX(xs[mid]), SY(ys[mid])
+    p.append(leader(sx_, sy_, sx_ - 0.12 * dw, sy_ - 0.02 * dh, 'suspended catenary', TEAL, anchor="end"))
+    p.append(leader(hang[0], hang[1], hang[0] - 0.02 * dw, hang[1] - 0.14 * dh, 'hang-off / porch', INK, anchor="end"))
+
+    # Legend / parameter block (bottom-right).
+    lx, ly = VBW - mr + 6, VBH - mb + 18
+    p.append(f'<rect x="{lx:.1f}" y="{ly:.1f}" width="{mr - 18:.1f}" height="86" rx="4" '
+             f'fill="#f7fafb" stroke="{DIM}" stroke-width="0.8"/>')
+    lines = [
+        ("SCR SIDE ELEVATION", INK, 11),
+        (f"catenary a=H/w : {a_cat:,.0f} m", INK, 11),
+        (f"arc length     : {arc:,.0f} m", INK, 11),
+        (f"hang-off angle : {hang_from_vert:.0f}&#176; from vert.", INK, 11),
+        ("geometry to scale", DIM, 10),
+    ]
+    for i, (t, c, fs) in enumerate(lines):
+        p.append(f'<text x="{lx + 8:.1f}" y="{ly + 16 + i * 15:.1f}" fill="{c}" font-size="{fs}">{t}</text>')
+
+    p.append("</svg>")
+    return "".join(p)
 
 
 def viv_mode_fig(viv: dict) -> go.Figure:
@@ -1093,6 +1298,14 @@ if _acc is not None:
             "sig" if _pass else "alarm"),
         kpi("Acceptance", "PASS" if _pass else "FAIL", "", "sig" if _pass else "alarm"),
     ]), unsafe_allow_html=True)
+
+if payload.get("catenary") is not None:
+    st.markdown('<div class="sec">System configuration &middot; SCR side elevation '
+                '(vessel &rarr; catenary &rarr; touchdown)</div>', unsafe_allow_html=True)
+    components.html(
+        f'<div style="width:100%;background:#fff">{system_schematic_svg(payload)}</div>',
+        height=470, scrolling=False,
+    )
 
 st.markdown('<div class="sec">Sea state &middot; spectral analysis &middot; hang-off motion</div>', unsafe_allow_html=True)
 st.markdown(kpi_row([
