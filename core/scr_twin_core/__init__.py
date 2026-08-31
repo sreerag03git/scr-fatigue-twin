@@ -41,6 +41,7 @@ from . import (
     synthetic,
     transfer,
     validation,
+    viv,
 )
 
 __all__ = [
@@ -65,5 +66,6 @@ __all__ = [
     "synthetic",
     "transfer",
     "validation",
+    "viv",
     "__version__",
 ]

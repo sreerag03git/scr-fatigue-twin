@@ -41,6 +41,7 @@ from scr_twin_core.config import (  # noqa: E402
     HangOffConfig,
     RiserConfig,
     TransferConfig,
+    VivConfig,
 )
 from scr_twin_core.sn import (  # noqa: E402
     DNV_C203_IN_AIR,
@@ -521,6 +522,40 @@ def divergence_fan_fig(dfan: dict) -> go.Figure:
     return f
 
 
+def viv_mode_fig(viv: dict) -> go.Figure:
+    """Dominant cross-flow VIV mode shape along the riser arc (the standing wave)."""
+    f = _fig(250)
+    sh = viv["dominant_shape"]
+    arc = np.asarray(sh["arc"], dtype=float)
+    disp = np.asarray(sh["disp"], dtype=float)
+    f.add_scatter(x=arc, y=disp, line=dict(color=SIGNAL2, width=2.2), name="mode")
+    f.add_scatter(x=arc, y=-disp, line=dict(color=SIGNAL2, width=0.8, dash="dot"),
+                  hoverinfo="skip")  # envelope (the mode oscillates +/-)
+    f.add_hline(y=0.0, line=dict(color=TEXT, width=0.6))
+    f.update_layout(
+        xaxis=dict(title="arc length from TDP [m]", gridcolor=GRID, zeroline=False),
+        yaxis=dict(title="cross-flow mode shape [-]", gridcolor=GRID, zeroline=False,
+                   range=[-1.2, 1.2]))
+    return f
+
+
+def viv_vr_fig(viv: dict) -> go.Figure:
+    """Reduced velocity Vr per mode with the cross-flow lock-in band shaded."""
+    f = _fig(250)
+    modes = viv["modes"]
+    n = [m["mode"] for m in modes]
+    vr = [m["reduced_velocity"] for m in modes]
+    colors = [AMBER if m["excited"] else "#c7d2d8" for m in modes]
+    f.add_hrect(y0=3.0, y1=9.0, fillcolor="rgba(180,121,26,0.10)", line_width=0,
+                annotation_text="lock-in", annotation_font_size=9, annotation_font_color=AMBER)
+    f.add_bar(x=n, y=vr, marker_color=colors, name="Vr")
+    f.update_layout(
+        xaxis=dict(title="cross-flow mode number", gridcolor=GRID, zeroline=False),
+        yaxis=dict(title="reduced velocity Vr = U / (fn D)", gridcolor=GRID, zeroline=False,
+                   range=[0, max(12.0, min(30.0, max(vr) if vr else 12.0))]))
+    return f
+
+
 def scatter_fig(lt: dict) -> go.Figure:
     """Fatigue-driver heat map over the Hs-Tp scatter diagram (% of long-term damage)."""
     hs_vals = list(lt["hs_values"])
@@ -832,6 +867,12 @@ with st.sidebar.expander("Transfer function (Layer 1)", expanded=True):
     else:
         st.caption("Reduced-order Morison model - a documented engineering approximation.")
 
+with st.sidebar.expander("Current & VIV (DNV-RP-F204)"):
+    viv_current = st.slider("Surface current [m/s]", 0.0, 3.0, 0.6, 0.1,
+                            help="Sheared current driving cross-flow VIV. 0 disables VIV.")
+    viv_damping = st.slider("Damping ratio", 0.005, 0.10, 0.02, 0.005)
+    st.caption("VIV screening (Griffin A/D + lock-in). **Screening upper bound**, not design-grade.")
+
 with st.sidebar.expander("Long-term wave climate (scatter)"):
     scatter_bytes: bytes | None = None
     sc_up = st.file_uploader("Scatter-diagram CSV", type=["csv"], key="scatter_csv")
@@ -866,6 +907,7 @@ try:
         hang_off=HangOffConfig(porch_x=porch_x, porch_y=porch_y, porch_z=porch_z,
                                riser_azimuth_deg=azimuth, exact_rotation=exact_rot),
         environment=EnvironmentConfig(enabled=env_on, temperature_factor=tfac, salinity_factor=sfac),
+        viv=VivConfig(surface_current=viv_current, damping_ratio=viv_damping),
         n_monte_carlo=int(n_mc), seed=int(seed),
     )
 except Exception as exc:  # noqa: BLE001
@@ -1165,6 +1207,32 @@ if _lt is not None:
                    f"({_lt['source']}). Real SCR fatigue is dominated by rare storms, not the "
                    "mean sea state - the heat map shows which cells drive it. Upload a project "
                    "scatter table in the sidebar.")
+
+# --- Cross-flow VIV screening (DNV-RP-F204) + combined wave+VIV life --------- #
+_viv = payload.get("viv")
+_comb = payload.get("combined")
+if _viv is not None and _viv.get("enabled"):
+    st.markdown('<div class="sec">Vortex-induced vibration (VIV) screening &middot; '
+                'DNV-RP-F204 &middot; <span class="tag amber">SCREENING - not design</span></div>',
+                unsafe_allow_html=True)
+    vv1, vv2 = dcols([1, 1])
+    vv1.plotly_chart(viv_mode_fig(_viv), width="stretch", config={"displayModeBar": False})
+    vv1.caption(f"Dominant excited cross-flow mode {_viv['dominant_mode']} standing wave along the "
+                "riser (current-induced vortex shedding). Higher modes lock in for stronger currents.")
+    vv2.plotly_chart(viv_vr_fig(_viv), width="stretch", config={"displayModeBar": False})
+    vv2.caption("Reduced velocity per mode; amber = inside the lock-in band, i.e. excited.")
+    _viv_life = _viv["life_years"]
+    _comb_life = _comb["life_years"] if _comb else float("inf")
+    st.markdown(kpi_row([
+        kpi("Combined wave+VIV life", life(_comb_life), "yr", "sig"),
+        kpi("VIV-only life", life(_viv_life), "yr", "amber"),
+        kpi("Dominant VIV mode", f'{_viv["dominant_mode"]}'),
+        kpi("Surface current", f'{_viv["current_surface_velocity"]:.2f}', "m/s"),
+        kpi("Stability param Ks", f'{_viv["stability_parameter"]:.2f}'),
+    ]), unsafe_allow_html=True)
+    st.caption("VIV is a screening upper-bound (Griffin A/D, DNV-RP-F204 lock-in) and is often a "
+               "dominant SCR fatigue driver - the combined life adds the wave and VIV damage rates "
+               "by Miner. Design-grade VIV needs Shear7 / VIVANA. Set the current to 0 to disable.")
 
 st.markdown(
     f'<div class="sec">Layer 3 - remaining-life posterior &middot; {post["n_members"]:,} MC members &middot; '

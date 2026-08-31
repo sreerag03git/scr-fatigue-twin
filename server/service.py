@@ -25,7 +25,9 @@ from scr_twin_core.inspection import (
 )
 from scr_twin_core.miner import SECONDS_PER_YEAR
 from scr_twin_core.pipeline import FullResult, long_term_fatigue, run_full_analysis
+from scr_twin_core.sn import get_curve
 from scr_twin_core.scatter import ScatterDiagram, example_scatter_diagram, load_scatter_csv
+from scr_twin_core.viv import CurrentProfile, viv_screening
 from scr_twin_core.synthetic import synthetic_mru_6dof, synthetic_mru_motion
 from scr_twin_core.transfer import InterpolatedTransferFunction, load_transfer_csv
 
@@ -215,6 +217,46 @@ def load_scatter(data: bytes | str) -> ScatterDiagram:
     return load_scatter_csv(data)
 
 
+def _viv_payload(config: AnalysisConfig) -> dict[str, Any]:
+    """Cross-flow VIV screening (DNV-RP-F204) + dominant mode shape + current profile."""
+    vc = config.viv
+    if vc.surface_current <= 0.0:
+        return {"enabled": False}
+    riser = config.riser
+    section = riser.pipe_section()
+    catenary = riser.catenary()
+    correction = config.environment.correction()
+    base = get_curve(riser.sn_class, riser.sn_environment)
+    curve = correction.apply_to_curve(base) if correction is not None else base
+    current = CurrentProfile(vc.surface_current, riser.water_depth, vc.profile_exponent)
+    sc = viv_screening(
+        catenary, section, curve, current,
+        contents_density=riser.contents_density,
+        added_mass_coefficient=vc.added_mass_coefficient, strouhal=vc.strouhal,
+        damping_ratio=vc.damping_ratio, n_modes=vc.n_modes,
+        thickness_m=riser.thickness_for_correction,
+    )
+    rm = sc.riser_modes
+    dom_idx = max(sc.dominant_mode - 1, 0)
+    dom_shape = rm.shapes[dom_idx] if rm.shapes.shape[0] > dom_idx else rm.shapes[0]
+    # Current profile vs height above the TDP for the schematic.
+    heights = np.linspace(0.0, riser.water_depth, 40)
+    payload = to_native(sc.as_dict())
+    payload.update({
+        "enabled": True,
+        "span_length": rm.span_length,
+        "dominant_shape": {
+            "arc": decimate(np.asarray(rm.arc), 200),
+            "disp": decimate(np.asarray(dom_shape), 200),
+        },
+        "current_profile": {
+            "height": [float(h) for h in heights],
+            "speed": [float(v) for v in current.speed_at_height(heights)],
+        },
+    })
+    return payload
+
+
 def _posterior_payload(result: FullResult) -> dict[str, Any]:
     mc = result.monte_carlo
     counts, edges = mc.histogram(48)
@@ -267,6 +309,12 @@ def analyze(
     rate_std = float(np.std(mc.damage_rate_per_year))
     fan = bayesian_life_fan(result.annual_damage_rate_time, rate_std)
 
+    # Cross-flow VIV screening + combined (wave + VIV) fatigue by Miner summation.
+    viv_block = _viv_payload(config)
+    wave_rate = float(result.annual_damage_rate_time)
+    viv_rate = float(viv_block.get("annual_damage_rate", 0.0)) if viv_block.get("enabled") else 0.0
+    combined_rate = wave_rate + viv_rate
+
     return to_native({
         "sea_state": {
             "hs": result.sea_state.hs, "tp": result.sea_state.tp,
@@ -278,6 +326,13 @@ def analyze(
         "verification": _verification_payload(result),
         "divergence_fan": divergence_fan(result.parameters, seed=config.seed),
         "long_term": _long_term_payload(config, diagram, imported_tf),
+        "viv": viv_block,
+        "combined": {
+            "wave_rate": wave_rate,
+            "viv_rate": viv_rate,
+            "annual_rate": combined_rate,
+            "life_years": (1.0 / combined_rate) if combined_rate > 0.0 else float("inf"),
+        },
         "dof_contributions": result.dof_contributions,
         "damage": {
             "annual_rate_time": result.annual_damage_rate_time,
