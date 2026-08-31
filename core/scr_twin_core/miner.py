@@ -19,7 +19,7 @@ from dataclasses import dataclass
 import numpy as np
 
 from .rainflow import CycleCount
-from .sn import SNCurve, cycles_to_failure
+from .sn import MeanStressModel, SNCurve, apply_mean_stress, cycles_to_failure
 
 SECONDS_PER_YEAR: float = 365.25 * 24.0 * 3600.0
 
@@ -47,20 +47,47 @@ class DamageResult:
     life_years: float
 
 
+def _effective_ranges(
+    cycles: CycleCount,
+    model: MeanStressModel,
+    ultimate_strength_pa: float | None,
+    static_mean_pa: float,
+) -> np.ndarray:
+    """Ranges to enter the S-N curve with, after any mean-stress correction.
+
+    The effective mean per cycle is the rainflow mean plus the ``static_mean_pa``
+    offset (the standing tension/bending stress the dynamic response rides on -
+    the wave-induced mean alone is ~0 through the bending transfer). With
+    ``NONE`` the ranges are returned unchanged.
+    """
+    if model is MeanStressModel.NONE:
+        return cycles.ranges
+    if ultimate_strength_pa is None or ultimate_strength_pa <= 0.0:
+        raise ValueError("ultimate_strength_pa is required for a mean-stress correction")
+    eff_mean = cycles.means + static_mean_pa
+    return apply_mean_stress(cycles.ranges, eff_mean, model, ultimate_strength_pa)
+
+
 def miner_damage(
     cycles: CycleCount,
     curve: SNCurve,
     *,
     thickness_m: float | None = None,
+    mean_stress_model: MeanStressModel = MeanStressModel.NONE,
+    ultimate_strength_pa: float | None = None,
+    static_mean_pa: float = 0.0,
 ) -> float:
     """Accumulated Miner damage from ``cycles`` on ``curve``.
 
     Half-cycles contribute their fractional count. Non-damaging cycles (range at
-    or below the curve so that ``N -> inf``) contribute zero.
+    or below the curve so that ``N -> inf``) contribute zero. When
+    ``mean_stress_model`` is not ``NONE`` each cycle's range is first mapped to an
+    equivalent fully-reversed range using its (rainflow + static) mean stress.
     """
     if len(cycles) == 0:
         return 0.0
-    n_fail = cycles_to_failure(cycles.ranges, curve, thickness_m=thickness_m)
+    ranges = _effective_ranges(cycles, mean_stress_model, ultimate_strength_pa, static_mean_pa)
+    n_fail = cycles_to_failure(ranges, curve, thickness_m=thickness_m)
     contributions = np.where(np.isfinite(n_fail), cycles.counts / n_fail, 0.0)
     return float(np.sum(contributions))
 
@@ -71,11 +98,19 @@ def block_damage(
     block_seconds: float,
     *,
     thickness_m: float | None = None,
+    mean_stress_model: MeanStressModel = MeanStressModel.NONE,
+    ultimate_strength_pa: float | None = None,
+    static_mean_pa: float = 0.0,
 ) -> DamageResult:
     """Damage, annualised rate and deterministic life for one time block."""
     if block_seconds <= 0.0:
         raise ValueError("block_seconds must be positive")
-    damage = miner_damage(cycles, curve, thickness_m=thickness_m)
+    damage = miner_damage(
+        cycles, curve, thickness_m=thickness_m,
+        mean_stress_model=mean_stress_model,
+        ultimate_strength_pa=ultimate_strength_pa,
+        static_mean_pa=static_mean_pa,
+    )
     rate = damage / block_seconds * SECONDS_PER_YEAR
     life = np.inf if rate <= 0.0 else 1.0 / rate
     return DamageResult(

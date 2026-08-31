@@ -75,6 +75,7 @@ class MeanStressModel(StrEnum):
 
     NONE = "none"
     GOODMAN = "goodman"
+    GERBER = "gerber"
     SWT = "swt"  # Smith-Watson-Topper
 
 
@@ -110,9 +111,15 @@ def apply_mean_stress(
 
     - ``GOODMAN``: dsigma_eq = dsigma / (1 - sigma_m / sigma_u), clipped so a
       mean at/above ultimate does not produce a non-physical negative range.
+    - ``GERBER``: dsigma_eq = dsigma / (1 - (sigma_m / sigma_u)^2) - the
+      parabolic (less conservative) mean-stress line; clipped identically.
     - ``SWT``: equivalent range = 2 * sqrt(sigma_max * sigma_a) using
       sigma_a = dsigma/2, valid for tensile sigma_max (compressive maxima are
       left unchanged as non-damaging in the SWT sense).
+
+    Only tensile mean stress knocks life down (a compressive mean is clipped to
+    zero, taking no beneficial credit - conservative and consistent with the
+    as-welded default in the pipeline).
     """
     dsig = np.asarray(stress_range_pa, dtype=np.float64)
     mean = np.asarray(mean_stress_pa, dtype=np.float64)
@@ -121,6 +128,10 @@ def apply_mean_stress(
     if model is MeanStressModel.GOODMAN:
         denom = 1.0 - np.clip(mean, 0.0, None) / ultimate_strength_pa
         denom = np.clip(denom, 1e-6, None)
+        return dsig / denom
+    if model is MeanStressModel.GERBER:
+        ratio = np.clip(mean, 0.0, None) / ultimate_strength_pa
+        denom = np.clip(1.0 - ratio**2, 1e-6, None)
         return dsig / denom
     if model is MeanStressModel.SWT:
         amp = dsig / 2.0

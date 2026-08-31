@@ -27,7 +27,7 @@ from .hang_off_kinematics import resolve_hang_off
 from .miner import SECONDS_PER_YEAR, DamageResult, block_damage
 from .montecarlo import MonteCarloResult, UncertaintyModel, run_monte_carlo
 from .rainflow import count_cycles
-from .sn import SNCurve, get_curve
+from .sn import MeanStressModel, SNCurve, get_curve
 from .spectral import SeaState, fit_jonswap, spectral_moments, welch_psd
 from .spectral_damage import dirlik_damage_rate_curve
 from .stress import (
@@ -58,6 +58,9 @@ class Provenance(BaseModel):
     transfer_route: str = "reference"
     transfer_is_validated: bool = False
     transfer_source: str = ""
+    mean_stress_model: str = "none"
+    mean_stress_applied: bool = False
+    static_mean_stress_pa: float = 0.0
 
 
 @dataclass(frozen=True)
@@ -216,8 +219,29 @@ def run_full_analysis(
     stress = stress_history_from_motion(x, fs, tf_time, section, scf=riser.scf)
     cycles = count_cycles(stress)
     duration = x.size / fs
+
+    # Mean-stress correction (DNV-RP-C203 Sec. 2.3 / mean-stress guidance).
+    # As-welded girth welds carry near-yield tensile residual stress, so DNV
+    # permits NO mean-stress benefit: the correction is suppressed and the full
+    # range is used. For base-material / stress-relieved details the configured
+    # model rides on the standing (static) hot-spot mean - by default the axial
+    # membrane stress T_TDP/A_steel from the catenary (the wave-induced dynamic
+    # mean alone is ~0 through the bending transfer, so an explicit static offset
+    # is what makes the correction physical).
+    static_mean = (
+        riser.static_mean_stress
+        if riser.static_mean_stress is not None
+        else catenary.horizontal_tension / section.steel_area
+    )
+    resolved_mean_model = (
+        MeanStressModel.NONE if riser.as_welded else riser.mean_stress_model
+    )
+    mean_stress_applied = resolved_mean_model is not MeanStressModel.NONE
     td_block = block_damage(
-        cycles, curve, duration, thickness_m=riser.thickness_for_correction
+        cycles, curve, duration, thickness_m=riser.thickness_for_correction,
+        mean_stress_model=resolved_mean_model,
+        ultimate_strength_pa=riser.ultimate_strength,
+        static_mean_pa=static_mean if mean_stress_applied else 0.0,
     )
     annual_rate_time = td_block.damage_rate_per_year
     life_years = float("inf") if annual_rate_time <= 0.0 else 1.0 / annual_rate_time
@@ -264,6 +288,9 @@ def run_full_analysis(
         transfer_route=tcfg.route,
         transfer_is_validated=transfer_is_validated,
         transfer_source=transfer_source,
+        mean_stress_model=str(resolved_mean_model.value),
+        mean_stress_applied=mean_stress_applied,
+        static_mean_stress_pa=float(static_mean if mean_stress_applied else 0.0),
     )
 
     return FullResult(

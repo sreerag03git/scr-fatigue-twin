@@ -62,6 +62,17 @@ class RiserConfig(BaseModel):
         default=None, gt=0.0, description="Thickness for the (t/t_ref)^k correction [m]; defaults to wall_thickness"
     )
     mean_stress_model: MeanStressModel = Field(default=MeanStressModel.NONE)
+    as_welded: bool = Field(
+        default=True,
+        description="As-welded weld detail: high tensile residual stress -> DNV allows NO mean-stress "
+        "benefit, so the correction is suppressed (full range used). Set False for base-material / "
+        "stress-relieved details to let mean_stress_model act.",
+    )
+    static_mean_stress: float | None = Field(
+        default=None,
+        description="Static (standing) hot-spot mean stress [Pa] the dynamic response rides on. "
+        "If None it is derived from the catenary axial tension (T_TDP / A_steel).",
+    )
 
     is_reference_preset: bool = Field(default=False, description="True marks an illustrative preset, not project data")
 
