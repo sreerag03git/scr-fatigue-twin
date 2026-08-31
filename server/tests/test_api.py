@@ -56,7 +56,8 @@ def test_analyze_synthetic_full_payload(config):
     r = client.post("/api/analyze/synthetic", json=body)
     assert r.status_code == 200
     p = r.json()
-    for key in ["sea_state", "spectrum", "damage", "posterior", "bayesian_fan", "inspection", "economics", "provenance"]:
+    for key in ["sea_state", "spectrum", "catenary", "verification", "divergence_fan",
+                "damage", "posterior", "bayesian_fan", "inspection", "economics", "provenance"]:
         assert key in p
     assert p["posterior"]["p10"] < p["posterior"]["p50"] < p["posterior"]["p90"]
     assert p["provenance"]["motion_is_synthetic"] is True
@@ -65,6 +66,14 @@ def test_analyze_synthetic_full_payload(config):
     fan = p["bayesian_fan"]
     assert fan["high"][0] > fan["high"][-1]  # band narrows with monitoring time
     assert any(hi > lo for hi, lo in zip(fan["high"], fan["low"]))  # not a flat line
+    # Catenary profile closes at the water depth; divergence fan hits the spec gate.
+    cat = p["catenary"]
+    assert cat["y"][0] == pytest.approx(0.0, abs=1e-6)
+    assert cat["y"][-1] == pytest.approx(cat["water_depth"], rel=1e-3)
+    dfan = p["divergence_fan"]
+    i15 = dfan["years"].index(15.0)
+    assert 0.035 <= dfan["p10"][i15] <= 0.07
+    assert 0.25 <= dfan["p90"][i15] <= 0.31
 
 
 def test_storm_shortens_life(config):

@@ -12,7 +12,11 @@ from typing import Any
 import numpy as np
 
 from scr_twin_core.bayesian import BayesianRateEstimator
-from scr_twin_core.montecarlo import UncertaintyModel, simulate_block_rate_observations
+from scr_twin_core.montecarlo import (
+    UncertaintyModel,
+    simulate_block_rate_observations,
+    simulate_wave_climate_multipliers,
+)
 from scr_twin_core.config import AnalysisConfig
 from scr_twin_core.inspection import (
     ConditionalEconomicsModel,
@@ -134,6 +138,59 @@ def load_transfer(data: bytes | str, **overrides: Any) -> InterpolatedTransferFu
     return load_transfer_csv(data, **overrides)
 
 
+def _catenary_payload(result: FullResult) -> dict[str, Any]:
+    """Static catenary profile (riser shape from TDP at origin to hang-off)."""
+    c = result.catenary_profile
+    return {
+        "x": decimate(np.asarray(c["x"]), 200),
+        "y": decimate(np.asarray(c["y"]), 200),
+        "catenary_parameter": c["catenary_parameter"],
+        "horizontal_span": c["horizontal_span"],
+        "arc_length": c["arc_length"],
+        "water_depth": c["water_depth"],
+        "tdp_curvature": c["tdp_curvature"],
+        "top_angle_deg": c["top_angle_deg"],
+    }
+
+
+def _verification_payload(result: FullResult) -> dict[str, Any]:
+    """Data for the Dirlik/Bendat-vs-rainflow range-distribution verification plot."""
+    h = result.rainflow_hist
+    m = result.spectral_moments
+    stress_to_mpa = float(h.get("stress_to_mpa", 1.0e-6))
+    edges = np.asarray(h["edges"], dtype=np.float64) * stress_to_mpa  # -> MPa
+    return {
+        "hist_edges_mpa": [float(e) for e in edges],
+        "hist_counts": [float(c) for c in np.asarray(h["counts"])],
+        "moments": {str(k): float(v) for k, v in m.items()},
+        "stress_to_mpa": stress_to_mpa,
+        "sigma_mpa": float(np.sqrt(max(m.get(0, 0.0), 0.0)) * stress_to_mpa),
+    }
+
+
+def divergence_fan(
+    parameters: dict[str, float], *, years: int = 20, n_members: int = 15000, seed: int = 0,
+) -> dict[str, list[float]]:
+    """Accumulated-damage divergence fan (actual/design - 1) vs year.
+
+    Uses the run's own uncertainty parameters; a fixed n_members/seed keeps the
+    figure deterministic and consistent with the spec-Sec.5 gate regardless of
+    the user's Monte Carlo slider.
+    """
+    model = UncertaintyModel(**parameters)
+    w = simulate_wave_climate_multipliers(model, years, n_members=n_members, seed=seed)
+    cum = np.cumsum(w, axis=1)
+    design = np.arange(1, years + 1, dtype=np.float64)
+    div = cum / design - 1.0  # (members, years)
+    p10, p50, p90 = np.percentile(div, [10, 50, 90], axis=0)
+    return {
+        "years": [0.0, *[float(y) for y in design]],
+        "p10": [0.0, *[float(v) for v in p10]],
+        "p50": [0.0, *[float(v) for v in p50]],
+        "p90": [0.0, *[float(v) for v in p90]],
+    }
+
+
 def _posterior_payload(result: FullResult) -> dict[str, Any]:
     mc = result.monte_carlo
     counts, edges = mc.histogram(48)
@@ -190,6 +247,9 @@ def analyze(
         },
         "spectrum": _spectrum_payload(result),
         "transfer": _transfer_payload(result),
+        "catenary": _catenary_payload(result),
+        "verification": _verification_payload(result),
+        "divergence_fan": divergence_fan(result.parameters, seed=config.seed),
         "dof_contributions": result.dof_contributions,
         "damage": {
             "annual_rate_time": result.annual_damage_rate_time,

@@ -26,7 +26,7 @@ from .environment import EnvironmentCorrection
 from .hang_off_kinematics import resolve_hang_off
 from .miner import SECONDS_PER_YEAR, DamageResult, FatigueAcceptance, block_damage, dff_acceptance
 from .montecarlo import MonteCarloResult, UncertaintyModel, run_monte_carlo
-from .rainflow import count_cycles
+from .rainflow import count_cycles, range_histogram
 from .sn import MeanStressModel, SNCurve, get_curve
 from .spectral import SeaState, fit_jonswap, spectral_moments, welch_psd
 from .spectral_damage import dirlik_damage_rate_curve
@@ -78,6 +78,9 @@ class FullResult:
     transfer_route: str
     transfer_provenance: dict
     dof_contributions: dict
+    catenary_profile: dict
+    rainflow_hist: dict
+    spectral_moments: dict
     time_domain_block: DamageResult
     annual_damage_rate_time: float
     annual_damage_rate_spectral: float
@@ -264,6 +267,27 @@ def run_full_analysis(
     else:
         annual_rate_spectral = 0.0
 
+    # --- Figure data: catenary profile, rainflow range histogram, moments ---
+    prof_x = np.linspace(0.0, catenary.horizontal_span, 200)
+    prof_y = catenary.shape(prof_x)
+    catenary_profile = {
+        "x": prof_x, "y": prof_y,
+        "catenary_parameter": catenary.catenary_parameter,
+        "horizontal_span": catenary.horizontal_span,
+        "arc_length": catenary.arc_length,
+        "water_depth": catenary.water_depth,
+        "tdp_curvature": catenary.tdp_curvature,
+        "top_angle_deg": float(np.degrees(catenary.top_angle)),
+    }
+    if cycles.ranges.size and float(cycles.ranges.max()) > 0.0:
+        edges = np.linspace(0.0, float(cycles.ranges.max()), 41)
+        hist_counts = range_histogram(cycles, edges)
+    else:
+        edges = np.linspace(0.0, 1.0, 41)
+        hist_counts = np.zeros(40, dtype=np.float64)
+    rainflow_hist = {"edges": edges, "counts": hist_counts, "stress_to_mpa": 1.0e-6}
+    spectral_moments_out = {int(k): float(v) for k, v in moments.items()}
+
     # --- |H(f)| curve for the Fig-4 transfer-function view (wave band) ---
     # Reported both as TDP moment transfer [N m per m heave] and, matching the
     # paper's Fig 4, as stress transfer [MPa per m heave] = |H_moment| SCF / Z.
@@ -311,6 +335,9 @@ def run_full_analysis(
         transfer_route=tcfg.route,
         transfer_provenance=transfer_provenance,
         dof_contributions=dof_contributions,
+        catenary_profile=catenary_profile,
+        rainflow_hist=rainflow_hist,
+        spectral_moments=spectral_moments_out,
         time_domain_block=td_block,
         annual_damage_rate_time=annual_rate_time,
         annual_damage_rate_spectral=annual_rate_spectral,

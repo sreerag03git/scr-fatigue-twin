@@ -84,6 +84,24 @@ def test_too_short_motion_raises():
         run_full_analysis(_config(), np.zeros(4), 4.0)
 
 
+def test_figure_data_is_populated():
+    m = _motion()
+    res = run_full_analysis(_config(), m.heave, m.fs)
+    # Catenary profile: TDP at origin, closes at the hang-off depth.
+    cp = res.catenary_profile
+    assert cp["x"][0] == 0.0
+    assert cp["y"][0] == pytest.approx(0.0, abs=1e-6)
+    assert cp["y"][-1] == pytest.approx(cp["water_depth"], rel=1e-3)
+    assert cp["tdp_curvature"] == pytest.approx(1.0 / cp["catenary_parameter"], rel=1e-12)
+    # Spectral moments present and positive.
+    assert set(res.spectral_moments) == {0, 1, 2, 4}
+    assert all(v > 0.0 for v in res.spectral_moments.values())
+    # Rainflow histogram: one bin per interval, non-negative, some cycles counted.
+    hist = res.rainflow_hist
+    assert len(hist["counts"]) == len(hist["edges"]) - 1
+    assert float(np.asarray(hist["counts"]).sum()) > 0.0
+
+
 def _riser_with(**updates):
     return RiserConfig.reference_scr().model_copy(update=updates)
 
