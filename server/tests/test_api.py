@@ -60,6 +60,11 @@ def test_analyze_synthetic_full_payload(config):
         assert key in p
     assert p["posterior"]["p10"] < p["posterior"]["p50"] < p["posterior"]["p90"]
     assert p["provenance"]["motion_is_synthetic"] is True
+    # AR(1) Bayesian fan: driven by real (autocorrelated) observations, not a
+    # constant -> the credible band genuinely contracts and is non-degenerate.
+    fan = p["bayesian_fan"]
+    assert fan["high"][0] > fan["high"][-1]  # band narrows with monitoring time
+    assert any(hi > lo for hi, lo in zip(fan["high"], fan["low"]))  # not a flat line
 
 
 def test_storm_shortens_life(config):

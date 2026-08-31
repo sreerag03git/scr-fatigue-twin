@@ -12,6 +12,7 @@ from typing import Any
 import numpy as np
 
 from scr_twin_core.bayesian import BayesianRateEstimator
+from scr_twin_core.montecarlo import UncertaintyModel, simulate_block_rate_observations
 from scr_twin_core.config import AnalysisConfig
 from scr_twin_core.inspection import (
     ConditionalEconomicsModel,
@@ -59,14 +60,25 @@ def bayesian_life_fan(
 ) -> dict[str, list[float]]:
     """Remaining-life credible-interval fan that contracts with monitoring time.
 
-    The signature visual: a proper Bayesian posterior on the damage rate, updated
-    with monthly stationary-window observations, mapped to remaining life
-    ``(1 - accumulated_damage)/rate``. Year 0 is the Monte Carlo prior; the band
-    narrows as data accrues (90% CI ~ 1/sqrt(T)).
+    A proper Bayesian posterior on the damage rate, updated with **genuine
+    AR(1)-correlated** per-block observations (not a constant), mapped to
+    remaining life ``(1 - accumulated_damage)/rate``. Because the observations are
+    autocorrelated the updater uses the AR(1) effective sample size, so the band
+    contracts at the honest rate: still ~ ``1/sqrt(T)`` (90% CI halves by year 4)
+    but wider in absolute terms than an i.i.d. shrink would give. Year 0 is the
+    Monte Carlo prior.
     """
-    rate_std = max(rate_std, nominal_rate * 1e-3)
+    model = UncertaintyModel()
+    phi = model.wave_climate_ar1
+    # Per-block observation std anchored to the generator's LogNormal CoV so the
+    # data scatter and the assumed obs noise are consistent.
+    log_cov = float(np.sqrt(np.exp(model.wave_climate_logstd**2) - 1.0))
+    block_std = max(nominal_rate * log_cov, nominal_rate * 1e-3, rate_std * 1e-6)
+    obs = simulate_block_rate_observations(
+        nominal_rate, model, years=years, blocks_per_year=blocks_per_year, seed=seed, phi=phi,
+    )
     est = BayesianRateEstimator(
-        prior_mean=nominal_rate, block_obs_std=rate_std, prior_std=rate_std
+        prior_mean=nominal_rate, block_obs_std=block_std, prior_std=block_std, obs_ar1=phi,
     )
     yrs: list[float] = [0.0]
     low: list[float] = []
@@ -84,8 +96,8 @@ def bayesian_life_fan(
     med.append(m)
     high.append(hi)
     for year in range(1, years + 1):
-        for _ in range(blocks_per_year):
-            est.update_block(nominal_rate)
+        for b in range(blocks_per_year):
+            est.update_block(float(obs[(year - 1) * blocks_per_year + b]))
         lo, m, hi = life_ci(est.posterior(), float(year))
         yrs.append(float(year))
         low.append(lo)

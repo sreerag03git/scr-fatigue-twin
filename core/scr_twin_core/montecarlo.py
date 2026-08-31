@@ -170,6 +170,46 @@ def simulate_wave_climate_multipliers(
     return model.wave_climate_median * np.exp(xi - 0.5 * s**2)
 
 
+def simulate_block_rate_observations(
+    nominal_rate: float,
+    model: UncertaintyModel,
+    *,
+    years: int,
+    blocks_per_year: int,
+    seed: int,
+    phi: float | None = None,
+    logstd: float | None = None,
+    median: float = 1.0,
+) -> NDArray[np.float64]:
+    """One realisation of AR(1)-correlated per-block annual-rate observations.
+
+    Returns a length ``years * blocks_per_year`` series of noisy annual-rate
+    estimates ``nominal_rate * W_t`` where ``W_t`` follows the same stationary
+    AR(1) LogNormal process as the wave-climate model (block cadence): ``xi_t =
+    phi xi_{t-1} + s sqrt(1 - phi^2) eps_t``, ``W_t = median exp(xi_t - s^2/2)``.
+
+    ``median`` defaults to 1.0 so the observations are centred on the nominal rate
+    (the fan must not bake in the harsher divergence-fan median). ``phi`` and
+    ``logstd`` default to the model's wave-climate persistence / scatter.
+    Deterministic for a given ``seed``.
+    """
+    n = int(years) * int(blocks_per_year)
+    if n < 1:
+        raise ValueError("years and blocks_per_year must be >= 1")
+    p = model.wave_climate_ar1 if phi is None else phi
+    s = model.wave_climate_logstd if logstd is None else logstd
+    if not (0.0 <= p < 1.0):
+        raise ValueError("phi must be in [0, 1)")
+    rng = np.random.default_rng(seed)
+    xi = np.empty(n)
+    xi[0] = s * rng.standard_normal()
+    innov = s * np.sqrt(1.0 - p**2)
+    for t in range(1, n):
+        xi[t] = p * xi[t - 1] + innov * rng.standard_normal()
+    w = median * np.exp(xi - 0.5 * s**2)
+    return (nominal_rate * w).astype(np.float64)
+
+
 def accumulated_damage_divergence(
     model: UncertaintyModel,
     years: int,
