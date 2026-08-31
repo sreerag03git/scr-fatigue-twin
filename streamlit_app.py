@@ -78,29 +78,50 @@ st.set_page_config(
 st.markdown(
     """
     <style>
+      @import url('https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500;600&display=swap');
+      html, body, .stApp, [class*="css"] { font-family:'IBM Plex Sans','Segoe UI',system-ui,sans-serif; }
       .stApp { background:
-        radial-gradient(120% 80% at 50% -8%, #ffffff 0%, #eef1f3 62%); color:#1f2b33; }
-      section[data-testid="stSidebar"] { background:#f5f7f8; border-right:1px solid #d3dbe0; }
-      h1,h2,h3,h4 { letter-spacing:.01em; color:#1a2830; }
+        linear-gradient(180deg,#f7f9fa 0%, #eef2f4 100%); color:#1f2b33; }
+      section[data-testid="stSidebar"] { background:#eef2f4; border-right:1px solid #cfd8dd; }
+      h1,h2,h3,h4 { letter-spacing:.01em; color:#16232b; font-weight:600; }
       .mono, code, [data-testid="stMetricValue"] {
-        font-family:"JetBrains Mono","Cascadia Mono",Consolas,monospace !important; }
+        font-family:'IBM Plex Mono',"JetBrains Mono",Consolas,monospace !important; }
+      /* Engineering title block */
+      .titleblock { display:grid; grid-template-columns:2.2fr repeat(4,1fr); border:1.4px solid #2c3e46;
+        background:#ffffff; margin:2px 0 12px; }
+      .titleblock > div { border-left:1px solid #d3dbe0; padding:9px 12px; }
+      .titleblock > div:first-child { border-left:none; }
+      .tb-name { font-family:'IBM Plex Mono',monospace; font-size:19px; font-weight:600; letter-spacing:.14em; color:#16232b; }
+      .tb-sub { font-size:9.5px; letter-spacing:.16em; text-transform:uppercase; color:#0b7079; margin-top:2px; }
+      .tb-k { font-size:8.5px; letter-spacing:.12em; text-transform:uppercase; color:#7a8c96; }
+      .tb-v { font-family:'IBM Plex Mono',monospace; font-size:14px; color:#16232b; margin-top:2px; font-variant-numeric:tabular-nums; }
+      .tb-v.pass { color:#1f8a5b; } .tb-v.fail { color:#c33d28; } .tb-v.sig { color:#0b7079; }
       .brand { display:flex; align-items:center; gap:12px; margin:-6px 0 2px; }
       .brand h1 { font-size:26px; margin:0; letter-spacing:.16em; color:#1a2830; font-weight:600; }
       .brand .sub { font-size:11px; letter-spacing:.14em; text-transform:uppercase; color:#6b7d88; }
-      .kpi-row { display:grid; grid-template-columns:repeat(auto-fit,minmax(150px,1fr)); gap:10px; margin:6px 0 4px; }
-      .kpi { background:#ffffff; border:1px solid #e2e8ec; border-radius:8px; padding:11px 13px;
-        box-shadow:0 1px 2px rgba(20,40,55,0.04); }
-      .kpi .lab { font-size:9.5px; letter-spacing:.09em; text-transform:uppercase; color:#6b7d88; }
-      .kpi .val { font-family:"JetBrains Mono",Consolas,monospace; font-size:22px; color:#1a2830;
-        line-height:1.15; font-variant-numeric:tabular-nums; margin-top:3px; }
+      .kpi-row { display:grid; grid-template-columns:repeat(auto-fit,minmax(150px,1fr)); gap:9px; margin:6px 0 4px; }
+      .kpi { background:#ffffff; border:1px solid #d7dee2; border-top:2.5px solid #0b7079; border-radius:2px;
+        padding:11px 13px; box-shadow:0 1px 2px rgba(20,40,55,0.05); position:relative; }
+      .kpi .lab { font-size:9px; letter-spacing:.11em; text-transform:uppercase; color:#6b7d88; }
+      .kpi .val { font-family:'IBM Plex Mono',Consolas,monospace; font-size:23px; color:#16232b;
+        line-height:1.12; font-variant-numeric:tabular-nums; margin-top:4px; font-weight:500; }
       .kpi .val small { font-size:11px; color:#6b7d88; margin-left:3px; }
       .kpi .val.sig { color:#0b7079; } .kpi .val.amber { color:#b4791a; } .kpi .val.alarm { color:#c33d28; }
-      .tag { display:inline-block; font-family:monospace; font-size:10px; letter-spacing:.06em; padding:2px 8px;
-        border-radius:5px; border:1px solid #c2ccd3; color:#3f515c; background:#ffffff; }
+      .kpi.sig { border-top-color:#0b7079; } .kpi.amber { border-top-color:#b4791a; } .kpi.alarm { border-top-color:#c33d28; }
+      .tag { display:inline-block; font-family:'IBM Plex Mono',monospace; font-size:10px; letter-spacing:.06em; padding:2px 8px;
+        border-radius:3px; border:1px solid #c2ccd3; color:#3f515c; background:#ffffff; }
       .tag.syn { color:#b4791a; border-color:#dcbd86; } .tag.pass { color:#1f8a5b; border-color:#a7d3bd; }
-      .tag.fail { color:#c33d28; border-color:#e2a99f; }
-      .sec { font-size:11px; letter-spacing:.12em; text-transform:uppercase; color:#56707d;
-        border-bottom:1px solid #d3dbe0; padding-bottom:5px; margin:14px 0 8px; }
+      .tag.fail { color:#c33d28; border-color:#e2a99f; } .tag.amber { color:#b4791a; border-color:#dcbd86; }
+      .sec { font-size:11px; letter-spacing:.13em; text-transform:uppercase; color:#3f5560; font-weight:600;
+        border-bottom:1.5px solid #0b7079; padding-bottom:5px; margin:16px 0 9px; display:flex; align-items:baseline; gap:9px; }
+      .sec[data-n]::before { content:attr(data-n); font-family:'IBM Plex Mono',monospace; font-size:10px; color:#0b7079;
+        border:1px solid #0b7079; border-radius:2px; padding:1px 5px; letter-spacing:.05em; }
+      .eq { background:#f5f8f9; border-left:3px solid #0b7079; padding:8px 12px; margin:6px 0 10px;
+        font-family:'IBM Plex Mono',monospace; font-size:12.5px; color:#16232b; overflow-x:auto; }
+      .eq .c { color:#7a8c96; }
+      [data-baseweb="tab-list"] { gap:2px; border-bottom:1.5px solid #cfd8dd; }
+      [data-baseweb="tab"] { font-family:'IBM Plex Mono',monospace !important; font-size:12px !important;
+        letter-spacing:.04em; text-transform:uppercase; }
       .gate { display:flex; align-items:center; gap:9px; padding:5px 2px; border-bottom:1px solid #e6eaec; font-size:12.5px; }
       .gate .dot { width:8px; height:8px; border-radius:50%; flex:none; }
       .gate .actual { margin-left:auto; font-family:monospace; font-size:11px; color:#56707d; }
@@ -530,6 +551,68 @@ def divergence_fan_fig(dfan: dict) -> go.Figure:
     return f
 
 
+def architecture_svg() -> str:
+    """Professional data-flow block diagram of the twin's processing chain."""
+    INK, TEAL, TEAL2, AMBER, DIM = "#2c3e46", "#0b7079", "#0f8f9c", "#b4791a", "#8194a0"
+    stages = [
+        ("01", "SENSING", "MRU 6-DOF motion", "Eq.6 hang-off"),
+        ("02", "TRANSFER", "H(f): MRU → TDP", "Morison / import"),
+        ("03", "STRESS", "TDP hot-spot σ", "SCF · M/Z"),
+        ("04", "DETECTION", "rainflow · S-N · Miner", "DNV-RP-C203"),
+        ("05", "POSTERIOR", "Monte-Carlo life", "10k members"),
+        ("06", "ASSIMILATION", "Bayesian update", "AR(1) n_eff"),
+        ("07", "DECISION", "RBI · economics", "Eq.11 ΔC"),
+    ]
+    W, H = 1120, 300
+    bw, bh, gap, x0, ymid = 138, 62, 16, 18, 168
+    p = [f'<svg viewBox="0 0 {W} {H}" width="100%" xmlns="http://www.w3.org/2000/svg" '
+         "font-family='IBM Plex Mono, monospace'>",
+         f'<rect width="{W}" height="{H}" fill="#ffffff"/>',
+         '<defs><marker id="af" markerWidth="9" markerHeight="9" refX="7" refY="3" orient="auto">'
+         f'<path d="M0,0 L7,3 L0,6 Z" fill="{DIM}"/></marker></defs>']
+
+    def box(x, y, num, title, sub, std, accent=TEAL):
+        return (
+            f'<g>'
+            f'<rect x="{x}" y="{y}" width="{bw}" height="{bh}" rx="3" fill="#f7fafb" '
+            f'stroke="{INK}" stroke-width="1.2"/>'
+            f'<rect x="{x}" y="{y}" width="{bw}" height="4" fill="{accent}"/>'
+            f'<text x="{x+9}" y="{y+20}" font-size="9" fill="{accent}" letter-spacing="1">{num} {title}</text>'
+            f'<text x="{x+9}" y="{y+37}" font-size="12" fill="{INK}" font-weight="600">{sub}</text>'
+            f'<text x="{x+9}" y="{y+52}" font-size="9.5" fill="{DIM}">{std}</text>'
+            f'</g>'
+        )
+
+    xs = []
+    for i, (num, title, sub, std) in enumerate(stages):
+        x = x0 + i * (bw + gap)
+        xs.append(x)
+        p.append(box(x, ymid, num, title, sub, std))
+        if i > 0:
+            xp = x0 + (i - 1) * (bw + gap) + bw
+            p.append(f'<line x1="{xp}" y1="{ymid+bh/2}" x2="{x}" y2="{ymid+bh/2}" '
+                     f'stroke="{DIM}" stroke-width="1.3" marker-end="url(#af)"/>')
+    # Side inputs feeding DETECTION (box index 3).
+    x_det = xs[3]
+    p.append(box(x_det - (bw + gap) / 2 - 30, 42, "+", "ENVIRONMENT", "wave scatter", "DNV-RP-C203 §5", AMBER))
+    p.append(box(x_det + (bw + gap) / 2 - 30, 42, "+", "VIV", "current lock-in", "DNV-RP-F204", AMBER))
+    for dx in (bw * 0.3, bw * 0.7):
+        p.append(f'<line x1="{x_det + dx - 30 + (bw+gap)/2 - bw*0.5:.0f}" y1="{42+bh}" '
+                 f'x2="{x_det + dx:.0f}" y2="{ymid}" stroke="{AMBER}" stroke-width="1.2" '
+                 f'stroke-dasharray="4 3" marker-end="url(#af)"/>')
+    # Feedback loop: decision -> sensing (continuous monitoring).
+    x_last = xs[-1] + bw
+    p.append(f'<path d="M{x_last-bw/2},{ymid+bh} L{x_last-bw/2},{ymid+bh+34} '
+             f'L{x0+bw/2},{ymid+bh+34} L{x0+bw/2},{ymid+bh}" fill="none" stroke="{TEAL2}" '
+             f'stroke-width="1.1" stroke-dasharray="5 4" marker-end="url(#af)"/>')
+    p.append(f'<text x="{(x0+x_last)/2}" y="{ymid+bh+50}" text-anchor="middle" font-size="9.5" '
+             f'fill="{TEAL2}">continuous re-assimilation as monitoring data accrues</text>')
+    p.append(f'<text x="{x0}" y="26" font-size="10" fill="{INK}" letter-spacing="1.5" '
+             f'font-weight="600">DIGITAL-TWIN PROCESSING CHAIN</text>')
+    p.append("</svg>")
+    return "".join(p)
+
+
 def _svg_arrow(x1, y1, x2, y2, color, width=1.0, both=False):
     """A dimension line with slim filled arrowheads (start optional)."""
     start = ' marker-start="url(#dimstart)"' if both else ""
@@ -732,6 +815,30 @@ def system_schematic_svg(payload: dict) -> str:
 
     p.append("</svg>")
     return "".join(p)
+
+
+def along_riser_stress_fig(cat: dict, e_mod: float, od: float, scf: float) -> go.Figure:
+    """Static bending-stress distribution along the riser arc: sigma = SCF·E·(D/2)·kappa(s).
+
+    Shows the stress concentrating at the touchdown point where the curvature peaks
+    - the reason SCR fatigue localises at the TDP.
+    """
+    a = float(cat["catenary_parameter"])
+    span = float(cat["horizontal_span"])
+    x = np.linspace(0.0, span, 260)
+    kappa = 1.0 / (a * np.cosh(x / a) ** 2)          # curvature [1/m]
+    arc = a * np.sinh(x / a)                          # arc length from TDP [m]
+    sigma = scf * e_mod * (od / 2.0) * kappa / 1e6    # outer-fibre bending stress [MPa]
+    f = _fig(250)
+    f.add_scatter(x=arc, y=sigma, line=dict(color=AMBER, width=2.4),
+                  fill="tozeroy", fillcolor="rgba(180,121,26,0.10)", name="σ_bend")
+    f.add_scatter(x=[0.0], y=[float(sigma[0])], mode="markers+text", text=["TDP"],
+                  textposition="top right", marker=dict(color=ALARM, size=9),
+                  textfont=dict(color=ALARM, size=10))
+    f.update_layout(
+        xaxis=dict(title="arc length from TDP [m]", gridcolor=GRID, zeroline=False),
+        yaxis=dict(title="static bending stress [MPa]", gridcolor=GRID, zeroline=False, rangemode="tozero"))
+    return f
 
 
 def viv_mode_fig(viv: dict) -> go.Figure:
@@ -1133,23 +1240,25 @@ is_synth = source.startswith("Synthetic")
 # --------------------------------------------------------------------------- #
 g = gates()
 gates_ok = sum(x["passed"] for x in g)
-head_l, head_r = dcols([3, 2])
-with head_l:
-    st.markdown(
-        '<div class="brand">'
-        '<svg width="30" height="30" viewBox="0 0 22 22"><path d="M3 19 C 7 19, 8 6, 19 3" '
-        'fill="none" stroke="#0f8f9c" stroke-width="1.7"/><circle cx="3" cy="19" r="2.2" fill="#b4791a"/>'
-        '<circle cx="19" cy="3" r="1.7" fill="#0b7079"/></svg>'
-        '<div><h1>SCR&middot;TWIN</h1><div class="sub">TDP Fatigue Integrity Console</div></div></div>',
-        unsafe_allow_html=True,
-    )
-with head_r:
-    st.markdown(
-        f'<div style="text-align:right;margin-top:10px">'
-        f'<span class="tag {"pass" if gates_ok == len(g) else "fail"}">{gates_ok}/{len(g)} gates</span>&nbsp;'
-        f'<span class="tag syn">{"SYNTHETIC" if is_synth else "MEASURED"}</span></div>',
-        unsafe_allow_html=True,
-    )
+_r = cfg.riser
+_env_now = {"in_air": "in air", "seawater_cp": "seawater/CP"}.get(str(_r.sn_environment.value), "in air")
+st.markdown(
+    '<div class="titleblock">'
+    '<div><div class="tb-name">SCR&middot;TWIN</div>'
+    '<div class="tb-sub">TDP fatigue integrity digital twin</div></div>'
+    f'<div><div class="tb-k">Riser section</div><div class="tb-v">{_r.outer_diameter*1e3:.0f}&times;{_r.wall_thickness*1e3:.1f} mm</div>'
+    f'<div class="tb-k" style="margin-top:5px">grade</div><div class="tb-v">{_r.material_grade}</div></div>'
+    f'<div><div class="tb-k">Water depth</div><div class="tb-v">{_r.water_depth:.0f} m</div>'
+    f'<div class="tb-k" style="margin-top:5px">hang-off</div><div class="tb-v">{_r.hang_off_angle_deg:.0f}&deg; f/vert</div></div>'
+    f'<div><div class="tb-k">S-N / SCF</div><div class="tb-v">DNV {_r.sn_class} &middot; {_r.scf:.2f}</div>'
+    f'<div class="tb-k" style="margin-top:5px">environment</div><div class="tb-v">{_env_now}</div></div>'
+    f'<div><div class="tb-k">DFF &middot; design life</div>'
+    f'<div class="tb-v">{_r.design_fatigue_factor:.0f}&times; &middot; {_r.design_service_life_years:.0f} yr</div>'
+    f'<div class="tb-k" style="margin-top:5px">gates &middot; source</div>'
+    f'<div class="tb-v {"sig" if gates_ok==len(g) else "fail"}">{gates_ok}/{len(g)} &middot; {"SYN" if is_synth else "MRU"}</div></div>'
+    '</div>',
+    unsafe_allow_html=True,
+)
 
 run_col, _ = dcols([1, 3])
 run_clicked = run_col.button("▶  Run analysis", type="primary", width="stretch",
@@ -1319,19 +1428,27 @@ with tab_over:
             kpi("Long-term (scatter) life", life(_lt["life_years"]) if _lt else "-", "yr"),
         ]), unsafe_allow_html=True)
     if _cat is not None:
-        st.markdown('<div class="sec">System configuration &middot; SCR side elevation '
+        st.markdown('<div class="sec" data-n="A">System configuration &middot; SCR side elevation '
                     '(vessel &rarr; catenary &rarr; touchdown)</div>', unsafe_allow_html=True)
         components.html(
             f'<div style="width:100%;background:#fff">{system_schematic_svg(payload)}</div>',
             height=470, scrolling=False,
         )
+    st.markdown('<div class="sec" data-n="B">Digital-twin architecture &middot; processing chain</div>',
+                unsafe_allow_html=True)
+    components.html(f'<div style="width:100%;background:#fff">{architecture_svg()}</div>',
+                    height=280, scrolling=False)
 
 # ========================== STRUCTURE ====================================== #
 with tab_struct:
     st.caption("Riser geometry and structural response: the solved catenary and the "
                "cross-flow modal shapes that carry VIV.")
+    st.markdown('<div class="eq">y(x) = a&#183;(cosh(x/a) &minus; 1),&nbsp; a = H/w,&nbsp; '
+                '&#954;(x) = 1/(a&#183;cosh&#178;(x/a)),&nbsp; &#963;<sub>bend</sub> = SCF&#183;E&#183;(D/2)&#183;&#954; '
+                '<span class="c"># closed-form catenary + outer-fibre bending</span></div>',
+                unsafe_allow_html=True)
     if _cat is not None:
-        st.markdown('<div class="sec">Static catenary configuration &middot; riser shape &amp; touchdown</div>',
+        st.markdown('<div class="sec" data-n="01">Static catenary configuration &middot; riser shape &amp; touchdown</div>',
                     unsafe_allow_html=True)
         gc1, gc2 = dcols([3, 2])
         gc1.plotly_chart(catenary_fig(_cat), width="stretch", config={"displayModeBar": False})
@@ -1345,8 +1462,15 @@ with tab_struct:
                 kpi("TDP curvature", f'{_cat["tdp_curvature"]*1e3:.3f}', "1/km", "amber"),
             ]), unsafe_allow_html=True)
             st.caption("Closed-form catenary y(x)=a(cosh(x/a)-1); kappa_TDP = 1/a = w/H.")
+        st.markdown('<div class="sec" data-n="02">Static bending-stress distribution along the riser</div>',
+                    unsafe_allow_html=True)
+        st.plotly_chart(
+            along_riser_stress_fig(_cat, cfg.riser.youngs_modulus, cfg.riser.outer_diameter, cfg.riser.scf),
+            width="stretch", config={"displayModeBar": False})
+        st.caption("Outer-fibre bending stress sigma=SCF·E·(D/2)·kappa(s) peaks at the touchdown "
+                   "point - the physical reason SCR fatigue localises there.")
     if _viv is not None and _viv.get("enabled"):
-        st.markdown('<div class="sec">Cross-flow modal response &middot; tensioned-beam modes</div>',
+        st.markdown('<div class="sec" data-n="03">Cross-flow modal response &middot; tensioned-beam modes</div>',
                     unsafe_allow_html=True)
         vm1, vm2 = dcols([1, 1])
         vm1.plotly_chart(viv_mode_fig(_viv), width="stretch", config={"displayModeBar": False})
