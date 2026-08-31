@@ -51,14 +51,15 @@ from scr_twin_core.sn import (  # noqa: E402
     cycles_to_failure,
     get_curve,
 )
+from scr_twin_core.spectral import jonswap  # noqa: E402
 from scr_twin_core.spectral_damage import dirlik_range_pdf  # noqa: E402
 from server import service  # noqa: E402
 
 # --------------------------------------------------------------------------- #
 # Palette / theme
 # --------------------------------------------------------------------------- #
-SIGNAL, SIGNAL2, AMBER, ALARM = "#0f8f9c", "#0b7079", "#b4791a", "#c33d28"
-GRID, TEXT, TEXTHI, PAPER = "#dce4e8", "#3f515c", "#1a2830", "rgba(0,0,0,0)"
+SIGNAL, SIGNAL2, AMBER, ALARM = "#10a2aa", "#0b7d84", "#b47d16", "#c0432f"
+GRID, TEXT, TEXTHI, PAPER = "#e3e9ea", "#4d626b", "#16232a", "rgba(0,0,0,0)"
 GOOD = "#1f8a5b"
 SN_CLASSES = ["B1", "B2", "C", "C1", "C2", "D", "E", "F", "F1", "F3", "G"]
 
@@ -79,90 +80,136 @@ st.markdown(
     """
     <style>
       @import url('https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500;600&display=swap');
-      html, body, .stApp, [class*="css"] { font-family:'IBM Plex Sans','Segoe UI',system-ui,sans-serif; }
-      .stApp { background:
-        linear-gradient(180deg,#f7f9fa 0%, #eef2f4 100%); color:#1f2b33; }
-      section[data-testid="stSidebar"] { background:#eef2f4; border-right:1px solid #cfd8dd; }
-      h1,h2,h3,h4 { letter-spacing:.01em; color:#16232b; font-weight:600; }
-      .mono, code, [data-testid="stMetricValue"] {
-        font-family:'IBM Plex Mono',"JetBrains Mono",Consolas,monospace !important; }
-      /* Engineering title block */
-      .titleblock { display:grid; grid-template-columns:2.2fr repeat(4,1fr); border:1.4px solid #2c3e46;
-        background:#ffffff; margin:2px 0 12px; }
-      .titleblock > div { border-left:1px solid #d3dbe0; padding:9px 12px; }
-      .titleblock > div:first-child { border-left:none; }
-      .tb-name { font-family:'IBM Plex Mono',monospace; font-size:19px; font-weight:600; letter-spacing:.14em; color:#16232b; }
-      .tb-sub { font-size:9.5px; letter-spacing:.16em; text-transform:uppercase; color:#0b7079; margin-top:2px; }
-      .tb-k { font-size:8.5px; letter-spacing:.12em; text-transform:uppercase; color:#7a8c96; }
-      .tb-v { font-family:'IBM Plex Mono',monospace; font-size:14px; color:#16232b; margin-top:2px; font-variant-numeric:tabular-nums; }
-      .tb-v.pass { color:#1f8a5b; } .tb-v.fail { color:#c33d28; } .tb-v.sig { color:#0b7079; }
-      .brand { display:flex; align-items:center; gap:12px; margin:-6px 0 2px; }
-      .brand h1 { font-size:26px; margin:0; letter-spacing:.16em; color:#1a2830; font-weight:600; }
-      .brand .sub { font-size:11px; letter-spacing:.14em; text-transform:uppercase; color:#6b7d88; }
-      .kpi-row { display:grid; grid-template-columns:repeat(auto-fit,minmax(150px,1fr)); gap:9px; margin:6px 0 4px; }
-      .kpi { background:#ffffff; border:1px solid #d7dee2; border-top:2.5px solid #0b7079; border-radius:2px;
-        padding:11px 13px; box-shadow:0 1px 2px rgba(20,40,55,0.05); position:relative; }
-      .kpi .lab { font-size:9px; letter-spacing:.11em; text-transform:uppercase; color:#6b7d88; }
-      .kpi .val { font-family:'IBM Plex Mono',Consolas,monospace; font-size:23px; color:#16232b;
-        line-height:1.12; font-variant-numeric:tabular-nums; margin-top:4px; font-weight:500; }
-      .kpi .val small { font-size:11px; color:#6b7d88; margin-left:3px; }
-      .kpi .val.sig { color:#0b7079; } .kpi .val.amber { color:#b4791a; } .kpi .val.alarm { color:#c33d28; }
-      .kpi.sig { border-top-color:#0b7079; } .kpi.amber { border-top-color:#b4791a; } .kpi.alarm { border-top-color:#c33d28; }
-      .tag { display:inline-block; font-family:'IBM Plex Mono',monospace; font-size:10px; letter-spacing:.06em; padding:2px 8px;
-        border-radius:3px; border:1px solid #c2ccd3; color:#3f515c; background:#ffffff; }
-      .tag.syn { color:#b4791a; border-color:#dcbd86; } .tag.pass { color:#1f8a5b; border-color:#a7d3bd; }
-      .tag.fail { color:#c33d28; border-color:#e2a99f; } .tag.amber { color:#b4791a; border-color:#dcbd86; }
-      .sec { font-size:11px; letter-spacing:.13em; text-transform:uppercase; color:#3f5560; font-weight:600;
-        border-bottom:1.5px solid #0b7079; padding-bottom:5px; margin:16px 0 9px; display:flex; align-items:baseline; gap:9px; }
-      .sec[data-n]::before { content:attr(data-n); font-family:'IBM Plex Mono',monospace; font-size:10px; color:#0b7079;
-        border:1px solid #0b7079; border-radius:2px; padding:1px 5px; letter-spacing:.05em; }
-      .eq { background:#f5f8f9; border-left:3px solid #0b7079; padding:8px 12px; margin:6px 0 10px;
-        font-family:'IBM Plex Mono',monospace; font-size:12.5px; color:#16232b; overflow-x:auto; }
-      .eq .c { color:#7a8c96; }
-      [data-baseweb="tab-list"] { gap:2px; border-bottom:1.5px solid #cfd8dd; }
-      [data-baseweb="tab"] { font-family:'IBM Plex Mono',monospace !important; font-size:12px !important;
-        letter-spacing:.04em; text-transform:uppercase; }
-      .gate { display:flex; align-items:center; gap:9px; padding:5px 2px; border-bottom:1px solid #e6eaec; font-size:12.5px; }
+      :root {
+        --bg:#e9edee; --panel:#ffffff; --panel2:#f4f7f8; --ink:#16232a; --sub:#4d626b;
+        --muted:#90a3ab; --line:#dbe3e6; --line2:#c3ced3; --accent:#0b7d84; --accent2:#10a2aa;
+        --amber:#b47d16; --alarm:#c0432f; --good:#1f8a5b; --wash:rgba(11,125,132,0.06);
+        --mono:'IBM Plex Mono','JetBrains Mono',Consolas,monospace;
+        --sans:'IBM Plex Sans','Segoe UI',system-ui,sans-serif;
+      }
+      html, body, .stApp, [class*="css"], p, span, div, label { font-family:var(--sans); }
+      .stApp { color:var(--ink);
+        background-color:var(--bg);
+        background-image:
+          linear-gradient(rgba(11,125,132,0.030) 1px, transparent 1px),
+          linear-gradient(90deg, rgba(11,125,132,0.030) 1px, transparent 1px);
+        background-size:30px 30px; }
+      [data-testid="stHeader"] { background:transparent; }
+      [data-testid="stMainBlockContainer"], .block-container { max-width:1220px; padding-top:2.4rem; }
+      h1,h2,h3,h4 { letter-spacing:.01em; color:var(--ink); font-weight:600; }
+      .mono, code, [data-testid="stMetricValue"] { font-family:var(--mono) !important; }
+      ::-webkit-scrollbar { width:9px; height:9px; }
+      ::-webkit-scrollbar-thumb { background:#c3ced3; border-radius:0; }
+      ::-webkit-scrollbar-track { background:transparent; }
+
+      /* ---- Masthead / engineering title block ---- */
+      .titleblock { display:grid; grid-template-columns:2.3fr repeat(4,1fr); border:1.4px solid var(--ink);
+        background:var(--panel); margin:0 0 6px; box-shadow:0 1px 0 rgba(22,35,42,0.05); }
+      .titleblock > div { border-left:1px solid var(--line); padding:10px 13px; position:relative; }
+      .titleblock > div:first-child { border-left:none; display:flex; flex-direction:column; justify-content:center; }
+      .tb-name { font-family:var(--mono); font-size:20px; font-weight:600; letter-spacing:.16em; color:var(--ink); }
+      .tb-sub { font-size:9px; letter-spacing:.18em; text-transform:uppercase; color:var(--accent); margin-top:3px; }
+      .tb-k { font-size:8px; letter-spacing:.13em; text-transform:uppercase; color:var(--muted); }
+      .tb-v { font-family:var(--mono); font-size:14px; color:var(--ink); margin-top:2px; font-variant-numeric:tabular-nums; }
+      .tb-v.pass { color:var(--good); } .tb-v.fail { color:var(--alarm); } .tb-v.sig { color:var(--accent); }
+
+      /* ---- KPI instrument cards ---- */
+      .kpi-row { display:grid; grid-template-columns:repeat(auto-fit,minmax(150px,1fr)); gap:9px; margin:8px 0 6px; }
+      .kpi { background:var(--panel); border:1px solid var(--line); padding:12px 13px 11px; position:relative; }
+      .kpi::before { content:""; position:absolute; top:6px; left:6px; width:7px; height:7px;
+        border-top:1.5px solid var(--accent); border-left:1.5px solid var(--accent); opacity:.6; }
+      .kpi::after { content:""; position:absolute; bottom:6px; right:6px; width:7px; height:7px;
+        border-bottom:1.5px solid var(--line2); border-right:1.5px solid var(--line2); }
+      .kpi .lab { font-family:var(--mono); font-size:8.5px; letter-spacing:.11em; text-transform:uppercase; color:var(--muted); }
+      .kpi .val { font-family:var(--mono); font-size:23px; color:var(--ink); line-height:1.1;
+        font-variant-numeric:tabular-nums; margin-top:5px; font-weight:500; }
+      .kpi .val small { font-size:11px; color:var(--muted); margin-left:3px; }
+      .kpi .val.sig { color:var(--accent); } .kpi .val.amber { color:var(--amber); } .kpi .val.alarm { color:var(--alarm); }
+
+      /* ---- tags ---- */
+      .tag { display:inline-block; font-family:var(--mono); font-size:10px; letter-spacing:.06em; padding:2px 8px;
+        border-radius:0; border:1px solid var(--line2); color:var(--sub); background:var(--panel); }
+      .tag.syn,.tag.amber { color:var(--amber); border-color:#dcbd86; } .tag.pass { color:var(--good); border-color:#a7d3bd; }
+      .tag.fail { color:var(--alarm); border-color:#e2a99f; }
+
+      /* ---- section headers with drafting index ---- */
+      .sec { display:flex; align-items:center; gap:10px; margin:20px 0 10px; font-family:var(--mono);
+        font-size:11px; letter-spacing:.15em; text-transform:uppercase; color:var(--sub); font-weight:500; }
+      .sec[data-n]::before { content:attr(data-n); font-family:var(--mono); font-size:10px; color:var(--accent);
+        border:1px solid var(--accent); padding:1px 6px; letter-spacing:.05em; flex:none; }
+      .sec::after { content:""; flex:1; height:1px; background:linear-gradient(90deg,var(--line2),transparent); }
+
+      /* ---- equation block ---- */
+      .eq { background:var(--panel2); border:1px solid var(--line); border-left:3px solid var(--accent);
+        padding:9px 13px; margin:8px 0 10px; font-family:var(--mono); font-size:12.5px; color:var(--ink); overflow-x:auto; }
+      .eq .c { color:var(--muted); }
+
+      /* ---- panels & notes ---- */
+      .panel { background:var(--panel); border:1px solid var(--line); padding:12px 14px; }
+      .note { font-size:11.5px; color:var(--sub); line-height:1.55; }
+
+      /* ---- gate rows ---- */
+      .gate { display:flex; align-items:center; gap:9px; padding:6px 2px; border-bottom:1px solid var(--line); font-size:12.5px; }
       .gate .dot { width:8px; height:8px; border-radius:50%; flex:none; }
-      .gate .actual { margin-left:auto; font-family:monospace; font-size:11px; color:#56707d; }
-      .foot { color:#8496a0; font-size:10.5px; font-family:monospace; letter-spacing:.05em; }
+      .gate .actual { margin-left:auto; font-family:var(--mono); font-size:11px; color:var(--sub); }
+      .foot { color:var(--muted); font-size:10.5px; font-family:var(--mono); letter-spacing:.04em; line-height:1.6; }
+
+      /* ---- data tables (ledger / generic) ---- */
       table.ledger { width:100%; border-collapse:collapse; font-size:12.5px; }
-      table.ledger th { text-align:left; font-size:10px; letter-spacing:.1em; text-transform:uppercase;
-                        color:#7a8c96; border-bottom:1.5px solid #cfd8dc; padding:7px 10px; }
-      table.ledger td { padding:7px 10px; border-bottom:1px solid #eceef0; color:#2c3e46; }
-      table.ledger td.lv { font-family:'JetBrains Mono',monospace; color:#0b7079; }
-      table.ledger td.lb { color:#8496a0; font-size:11px; }
-      table.ledger tr:hover td { background:#f5f9fa; }
-      /* landing */
-      .land { max-width:860px; margin:2vh auto 0; text-align:center; }
-      .land h1 { font-size:44px; letter-spacing:.18em; margin:14px 0 2px; }
-      .land .tagline { font-size:13px; letter-spacing:.16em; text-transform:uppercase; color:#56707d; }
-      .land .lede { color:#3f515c; font-size:15px; line-height:1.6; max-width:640px; margin:20px auto 4px; }
-      .chips { display:flex; flex-wrap:wrap; gap:8px; justify-content:center; margin:18px 0 6px; }
-      .chip { font-family:monospace; font-size:11px; color:#3f515c; background:#ffffff; border:1px solid #d3dbe0;
-        border-radius:20px; padding:4px 12px; }
-      .flow { display:flex; flex-wrap:wrap; gap:10px; justify-content:center; margin:22px 0 8px; }
-      .flowcard { background:#ffffff; border:1px solid #e2e8ec; border-radius:8px; padding:12px 14px; width:150px; text-align:left; }
-      .flowcard .n { font-family:monospace; font-size:10px; color:#0f8f9c; letter-spacing:.1em; }
-      .flowcard .t { font-size:12.5px; color:#1a2830; margin-top:4px; font-weight:600; }
-      .flowcard .d { font-size:10.5px; color:#6b7d88; margin-top:3px; line-height:1.4; }
-      /* live run */
-      .livebar { display:flex; align-items:center; gap:8px; font-family:monospace; font-size:12px;
-        letter-spacing:.08em; color:#0b7079; text-transform:uppercase; margin:6px 0 8px; }
-      .livedot { width:9px; height:9px; border-radius:50%; background:#c33d28;
-        box-shadow:0 0 0 0 rgba(195,61,40,.5); animation:pulse 1.1s infinite; }
-      @keyframes pulse { 0%{box-shadow:0 0 0 0 rgba(195,61,40,.45);} 70%{box-shadow:0 0 0 7px rgba(195,61,40,0);} 100%{box-shadow:0 0 0 0 rgba(195,61,40,0);} }
-      .livestatus { font-family:monospace; font-size:12.5px; color:#3f515c; margin:2px 0 6px; }
-      /* Floating, always-visible view toggle so the mobile/desktop switch is never
-         lost above the hero or tucked into a corner column. Streamlit tags the
-         keyed button's container .st-key-view_toggle. */
-      .st-key-view_toggle { position:fixed !important; bottom:20px; right:20px;
-        width:auto !important; z-index:1000; margin:0 !important; }
-      .st-key-view_toggle button { border-radius:22px !important; padding:9px 18px !important;
-        background:#0f8f9c !important; color:#ffffff !important; border:none !important;
-        font-weight:600 !important; box-shadow:0 6px 20px rgba(15,143,156,0.40) !important;
-        min-height:0 !important; }
-      .st-key-view_toggle button:hover { background:#0b7079 !important; color:#ffffff !important; }
+      table.ledger th { text-align:left; font-family:var(--mono); font-size:9.5px; letter-spacing:.1em; text-transform:uppercase;
+        color:var(--muted); border-bottom:1.5px solid var(--line2); padding:7px 10px; }
+      table.ledger td { padding:7px 10px; border-bottom:1px solid var(--line); color:var(--ink); vertical-align:top; }
+      table.ledger td.lv { font-family:var(--mono); color:var(--accent); font-variant-numeric:tabular-nums; }
+      table.ledger td.lb { color:var(--muted); font-size:11px; }
+      table.ledger tr:hover td { background:var(--panel2); }
+
+      /* ---- tabs ---- */
+      [data-baseweb="tab-list"] { gap:0; border-bottom:1px solid var(--line2); background:transparent; }
+      [data-baseweb="tab"] { font-family:var(--mono) !important; font-size:11.5px !important; letter-spacing:.07em;
+        text-transform:uppercase; color:var(--muted); padding:9px 15px !important; }
+      [data-baseweb="tab"][aria-selected="true"] { color:var(--accent); }
+      [data-baseweb="tab-highlight"] { background:var(--accent) !important; height:2px; }
+
+      /* ---- buttons ---- */
+      .stButton button, .stDownloadButton button { border-radius:0 !important; font-family:var(--mono) !important;
+        letter-spacing:.05em; border:1px solid var(--line2) !important; }
+      .stButton button[kind="primary"] { background:var(--accent) !important; border-color:var(--accent) !important;
+        color:#fff !important; box-shadow:0 2px 10px rgba(11,125,132,0.25) !important; }
+      .stButton button[kind="primary"]:hover { background:var(--ink) !important; border-color:var(--ink) !important; }
+
+      /* ---- sidebar control panel ---- */
+      section[data-testid="stSidebar"] { background:#e3e9ea; border-right:1px solid var(--line2); }
+      section[data-testid="stSidebar"] [data-testid="stExpander"] { border:1px solid var(--line); background:var(--panel); }
+      section[data-testid="stSidebar"] summary { font-family:var(--mono) !important; font-size:11px !important;
+        letter-spacing:.06em; text-transform:uppercase; color:var(--sub) !important; }
+      section[data-testid="stSidebar"] label { font-size:11.5px !important; color:var(--sub) !important; }
+      [data-testid="stWidgetLabel"] p { font-size:11.5px !important; }
+
+      /* ---- section header (streamlit sec class) ---- */
+      .land { max-width:900px; margin:1vh auto 0; text-align:center; }
+      .land h1 { font-family:var(--mono); font-size:46px; letter-spacing:.20em; margin:16px 0 2px; color:var(--ink); }
+      .land .tagline { font-family:var(--mono); font-size:12px; letter-spacing:.22em; text-transform:uppercase; color:var(--accent); }
+      .land .lede { color:var(--sub); font-size:15px; line-height:1.65; max-width:660px; margin:22px auto 4px; }
+      .chips { display:flex; flex-wrap:wrap; gap:7px; justify-content:center; margin:20px 0 6px; }
+      .chip { font-family:var(--mono); font-size:11px; color:var(--sub); background:var(--panel); border:1px solid var(--line2);
+        border-radius:0; padding:4px 12px; }
+      .flow { display:flex; flex-wrap:wrap; gap:10px; justify-content:center; margin:24px 0 8px; }
+      .flowcard { background:var(--panel); border:1px solid var(--line); padding:13px 15px; width:156px; text-align:left; position:relative; }
+      .flowcard::before { content:""; position:absolute; top:0; left:0; width:22px; height:2px; background:var(--accent); }
+      .flowcard .n { font-family:var(--mono); font-size:10px; color:var(--accent); letter-spacing:.12em; }
+      .flowcard .t { font-size:12.5px; color:var(--ink); margin-top:5px; font-weight:600; }
+      .flowcard .d { font-size:10.5px; color:var(--muted); margin-top:3px; line-height:1.45; }
+      .livebar { display:flex; align-items:center; gap:8px; font-family:var(--mono); font-size:12px;
+        letter-spacing:.08em; color:var(--accent); text-transform:uppercase; margin:6px 0 8px; }
+      .livedot { width:9px; height:9px; border-radius:50%; background:var(--alarm);
+        box-shadow:0 0 0 0 rgba(192,67,47,.5); animation:pulse 1.1s infinite; }
+      @keyframes pulse { 0%{box-shadow:0 0 0 0 rgba(192,67,47,.45);} 70%{box-shadow:0 0 0 7px rgba(192,67,47,0);} 100%{box-shadow:0 0 0 0 rgba(192,67,47,0);} }
+      .livestatus { font-family:var(--mono); font-size:12.5px; color:var(--sub); margin:2px 0 6px; }
+      .st-key-view_toggle { position:fixed !important; bottom:20px; right:20px; width:auto !important; z-index:1000; margin:0 !important; }
+      .st-key-view_toggle button { border-radius:0 !important; padding:9px 18px !important;
+        background:var(--accent) !important; color:#fff !important; border:none !important;
+        font-weight:600 !important; box-shadow:0 6px 20px rgba(11,125,132,0.35) !important; min-height:0 !important; }
+      .st-key-view_toggle button:hover { background:var(--ink) !important; color:#fff !important; }
     </style>
     """,
     unsafe_allow_html=True,
@@ -332,10 +379,15 @@ def kpi_row(items: list[str]) -> str:
 def _fig(height: int) -> go.Figure:
     f = go.Figure()
     f.update_layout(
-        height=height, margin=dict(l=56, r=18, t=14, b=42),
-        paper_bgcolor=PAPER, plot_bgcolor=PAPER, showlegend=False,
-        font=dict(color=TEXT, family="JetBrains Mono, Consolas, monospace", size=11),
-        hoverlabel=dict(font_family="JetBrains Mono, monospace"),
+        height=height, margin=dict(l=58, r=20, t=16, b=44),
+        paper_bgcolor=PAPER, plot_bgcolor="#ffffff", showlegend=False,
+        font=dict(color=TEXT, family="IBM Plex Mono, JetBrains Mono, monospace", size=11),
+        hoverlabel=dict(font_family="IBM Plex Mono, monospace", bgcolor="#ffffff",
+                        bordercolor="#d3dde1", font_size=11),
+        xaxis=dict(linecolor="#c3ced3", ticks="outside", tickcolor="#c3ced3", ticklen=3,
+                   tickfont=dict(size=10), title_font=dict(size=11, color=TEXTHI)),
+        yaxis=dict(linecolor="#c3ced3", ticks="outside", tickcolor="#c3ced3", ticklen=3,
+                   tickfont=dict(size=10), title_font=dict(size=11, color=TEXTHI)),
     )
     return f
 
@@ -892,6 +944,95 @@ def scatter_fig(lt: dict) -> go.Figure:
     f.update_layout(
         xaxis=dict(title="Tp [s]", gridcolor=GRID, zeroline=False, dtick=2),
         yaxis=dict(title="Hs [m]", gridcolor=GRID, zeroline=False))
+    return f
+
+
+def data_table(headers: list[str], rows: list[list], value_cols: tuple[int, ...] = (1,)) -> str:
+    """Render a technical HTML data table using the .ledger styling."""
+    th = "".join(f"<th>{h}</th>" for h in headers)
+    out = [f'<table class="ledger"><thead><tr>{th}</tr></thead><tbody>']
+    for r in rows:
+        tds = ""
+        for i, c in enumerate(r):
+            cls = "lv" if i in value_cols else ("lb" if i == len(r) - 1 else "")
+            tds += f'<td class="{cls}">{c}</td>'
+        out.append(f"<tr>{tds}</tr>")
+    out.append("</tbody></table>")
+    return "".join(out)
+
+
+def jonswap_wave_fig(sea: dict) -> go.Figure:
+    """The identified JONSWAP wave-elevation spectrum S(f) driving the response."""
+    f = _fig(230)
+    fr = np.linspace(0.02, 0.45, 400)
+    s = jonswap(fr, sea["hs"], sea["tp"], gamma=max(sea["gamma"], 1.0), normalize=True)
+    f.add_scatter(x=fr, y=s, line=dict(color=SIGNAL, width=2),
+                  fill="tozeroy", fillcolor="rgba(16,162,170,0.08)")
+    f.add_vline(x=1.0 / sea["tp"], line=dict(color=AMBER, width=1, dash="dot"),
+                annotation_text="fp", annotation_font_size=9, annotation_font_color=AMBER)
+    f.update_layout(xaxis=dict(title="frequency [Hz]", gridcolor=GRID, zeroline=False, range=[0, 0.45]),
+                    yaxis=dict(title="S(f) [m²/Hz]", gridcolor=GRID, zeroline=False, rangemode="tozero"))
+    return f
+
+
+def hf_phase_fig(tf: dict) -> go.Figure:
+    """Phase of the TDP transfer function H(f)."""
+    f = _fig(230)
+    ph = np.degrees(np.asarray(tf["phase"], dtype=float))
+    f.add_scatter(x=tf["freq"], y=ph, line=dict(color=SIGNAL2, width=1.8))
+    f.update_layout(xaxis=dict(title="frequency [Hz]", gridcolor=GRID, zeroline=False, range=[0, 0.4]),
+                    yaxis=dict(title="phase ∠H(f) [deg]", gridcolor=GRID, zeroline=False))
+    return f
+
+
+def rainflow_hist_fig(ver: dict) -> go.Figure:
+    """Rainflow stress-range histogram (counted cycles per range bin)."""
+    f = _fig(230)
+    edges = np.asarray(ver["hist_edges_mpa"], dtype=float)
+    counts = np.asarray(ver["hist_counts"], dtype=float)
+    centres = 0.5 * (edges[:-1] + edges[1:])
+    f.add_bar(x=centres, y=counts, marker_color="rgba(11,125,132,0.35)",
+              marker_line_color=SIGNAL2, marker_line_width=0.4)
+    f.update_layout(xaxis=dict(title="stress range [MPa]", gridcolor=GRID, zeroline=False),
+                    yaxis=dict(title="counted cycles", gridcolor=GRID, zeroline=False, rangemode="tozero"))
+    return f
+
+
+def cdf_fig(post: dict) -> go.Figure:
+    """Empirical CDF of the Monte-Carlo remaining-life posterior with P10/50/90."""
+    f = _fig(230)
+    f.add_scatter(x=post["cdf_x"], y=post["cdf_p"], line=dict(color=SIGNAL2, width=2.2))
+    for key, col in (("p10", AMBER), ("p50", SIGNAL2), ("p90", SIGNAL)):
+        f.add_vline(x=post[key], line=dict(color=col, width=1, dash="dash"),
+                    annotation_text=key.upper(), annotation_font_size=9, annotation_font_color=col)
+    f.update_layout(xaxis=dict(title="remaining life [yr]", gridcolor=GRID, zeroline=False),
+                    yaxis=dict(title="cumulative probability", gridcolor=GRID, zeroline=False, range=[0, 1]))
+    return f
+
+
+def current_profile_fig(viv: dict) -> go.Figure:
+    """Sheared current speed vs height above the seabed."""
+    f = _fig(230)
+    cp = viv["current_profile"]
+    f.add_scatter(x=cp["speed"], y=cp["height"], line=dict(color=SIGNAL, width=2),
+                  fill="tozerox", fillcolor="rgba(16,162,170,0.08)")
+    f.update_layout(xaxis=dict(title="current speed U [m/s]", gridcolor=GRID, zeroline=False, rangemode="tozero"),
+                    yaxis=dict(title="height above seabed [m]", gridcolor=GRID, zeroline=False, rangemode="tozero"))
+    return f
+
+
+def riser_tension_fig(cat: dict, w: float) -> go.Figure:
+    """Effective tension and axial stress mean along the riser arc."""
+    a = float(cat["catenary_parameter"])
+    span = float(cat["horizontal_span"])
+    x = np.linspace(0.0, span, 240)
+    arc = a * np.sinh(x / a)
+    tension = w * a * np.cosh(x / a)   # T(x) = H cosh(x/a), H = w a
+    f = _fig(230)
+    f.add_scatter(x=arc, y=tension / 1e3, line=dict(color=SIGNAL2, width=2.2),
+                  fill="tozeroy", fillcolor="rgba(11,125,132,0.06)")
+    f.update_layout(xaxis=dict(title="arc length from TDP [m]", gridcolor=GRID, zeroline=False),
+                    yaxis=dict(title="effective tension [kN]", gridcolor=GRID, zeroline=False, rangemode="tozero"))
     return f
 
 
@@ -1469,8 +1610,38 @@ with tab_struct:
             width="stretch", config={"displayModeBar": False})
         st.caption("Outer-fibre bending stress sigma=SCF·E·(D/2)·kappa(s) peaks at the touchdown "
                    "point - the physical reason SCR fatigue localises there.")
+        _sc = cfg.riser.pipe_section()
+        _w = cfg.riser.effective_submerged_weight()
+        st.markdown('<div class="sec" data-n="03">Pipe section properties &middot; derived geometry</div>',
+                    unsafe_allow_html=True)
+        pp1, pp2 = dcols([1, 1])
+        with pp1:
+            st.markdown(data_table(
+                ["Property", "Value", "Unit"],
+                [["Outer diameter D", f"{cfg.riser.outer_diameter*1e3:.1f}", "mm"],
+                 ["Wall thickness t", f"{cfg.riser.wall_thickness*1e3:.2f}", "mm"],
+                 ["Inner diameter", f"{_sc.inner_diameter*1e3:.1f}", "mm"],
+                 ["Steel area A", f"{_sc.steel_area*1e4:.1f}", "cm²"],
+                 ["2nd moment I", f"{_sc.second_moment_area*1e8:.1f}", "cm⁴"],
+                 ["Section modulus Z", f"{_sc.section_modulus*1e6:.1f}", "cm³"]],
+                value_cols=(1,)), unsafe_allow_html=True)
+        with pp2:
+            st.markdown(data_table(
+                ["Property", "Value", "Unit"],
+                [["Bending stiffness EI", f"{_sc.bending_stiffness/1e6:.1f}", "MN·m²"],
+                 ["Young's modulus E", f"{cfg.riser.youngs_modulus/1e9:.0f}", "GPa"],
+                 ["Submerged weight w", f"{_w:.0f}", "N/m"],
+                 ["Horizontal tension H", f"{_w*_cat['catenary_parameter']/1e3:.0f}", "kN"],
+                 ["Top tension", f"{_w*_cat['catenary_parameter']*np.cosh(_cat['horizontal_span']/_cat['catenary_parameter'])/1e3:.0f}", "kN"],
+                 ["Contents density", f"{cfg.riser.contents_density:.0f}", "kg/m³"]],
+                value_cols=(1,)), unsafe_allow_html=True)
+        st.markdown('<div class="sec" data-n="04">Effective-tension distribution along the riser</div>',
+                    unsafe_allow_html=True)
+        st.plotly_chart(riser_tension_fig(_cat, _w), width="stretch", config={"displayModeBar": False})
+        st.caption("T(s) = H·cosh(x/a) rises from the horizontal tension H at the TDP to the top "
+                   "tension at hang-off; the axial mean stress T/A rides under the dynamic bending.")
     if _viv is not None and _viv.get("enabled"):
-        st.markdown('<div class="sec" data-n="03">Cross-flow modal response &middot; tensioned-beam modes</div>',
+        st.markdown('<div class="sec" data-n="05">Cross-flow modal response &middot; tensioned-beam modes</div>',
                     unsafe_allow_html=True)
         vm1, vm2 = dcols([1, 1])
         vm1.plotly_chart(viv_mode_fig(_viv), width="stretch", config={"displayModeBar": False})
@@ -1478,6 +1649,15 @@ with tab_struct:
                     "(real tensioned-beam eigensolve).")
         vm2.plotly_chart(viv_vr_fig(_viv), width="stretch", config={"displayModeBar": False})
         vm2.caption("Reduced velocity per mode; amber = inside the lock-in band, i.e. excited.")
+        _exc = [m for m in _viv["modes"] if m["excited"]]
+        if _exc:
+            st.markdown('<div class="sec" data-n="06">Excited-mode table &middot; lock-in cross-flow modes</div>',
+                        unsafe_allow_html=True)
+            st.markdown(data_table(
+                ["Mode", "fn [Hz]", "Vr", "A/D", "Δσ [MPa]", "damage /yr"],
+                [[str(m["mode"]), f"{m['frequency_hz']:.3f}", f"{m['reduced_velocity']:.1f}",
+                  f"{m['a_over_d']:.2f}", f"{m['stress_range_mpa']:.1f}", f"{m['annual_damage_rate']:.2e}"]
+                 for m in _exc[:10]], value_cols=(1, 2, 3, 4, 5)), unsafe_allow_html=True)
 
 # ========================== ENVIRONMENT ==================================== #
 with tab_env:
@@ -1490,10 +1670,34 @@ with tab_env:
         kpi("gamma fit", f'{sea["gamma"]:.1f}'),
         kpi("Env. capacity factor", f'{env["factor"]:.3f}' if env["enabled"] else "-", "", "amber"),
     ]), unsafe_allow_html=True)
-    st.markdown('<div class="sec">Spectral analysis &middot; motion &amp; stress PSD</div>', unsafe_allow_html=True)
-    st.plotly_chart(spectra_fig(payload["spectrum"]), width="stretch", config={"displayModeBar": False})
+    st.markdown('<div class="eq">S(f) = &#945; g&#178; (2&#960;)<sup>&minus;4</sup> f<sup>&minus;5</sup> '
+                'exp[&minus;1.25(f<sub>p</sub>/f)&#8308;] &#183; &#947;<sup>r</sup>&nbsp;&nbsp;'
+                'H<sub>s</sub> = 4&#8730;m&#8320; <span class="c"># JONSWAP wave spectrum</span></div>',
+                unsafe_allow_html=True)
+    ev1, ev2 = dcols([1, 1])
+    ev1.markdown('<div class="sec" data-n="01">Identified JONSWAP wave spectrum</div>', unsafe_allow_html=True)
+    ev1.plotly_chart(jonswap_wave_fig(sea), width="stretch", config={"displayModeBar": False})
+    ev2.markdown('<div class="sec" data-n="02">Response PSD &middot; motion &amp; stress</div>', unsafe_allow_html=True)
+    ev2.plotly_chart(spectra_fig(payload["spectrum"]), width="stretch", config={"displayModeBar": False})
+    if env["enabled"]:
+        st.markdown('<div class="sec" data-n="03">Arabian-Gulf environmental knock-down</div>', unsafe_allow_html=True)
+        st.markdown(kpi_row([
+            kpi("Temperature factor", f'{env.get("temperature_factor", 0):.3f}'),
+            kpi("Salinity factor", f'{env.get("salinity_factor", 0):.3f}'),
+            kpi("Combined capacity factor", f'{env["factor"]:.3f}', "", "amber"),
+            kpi("Life reduction", f'{(1-env["factor"])*100:.0f}', "%", "alarm"),
+        ]), unsafe_allow_html=True)
+        st.caption("Temperature + salinity severity multiply the S-N capacity (DNV-RP-C203); the "
+                   "combined factor F scales the fatigue life.")
+    if _viv is not None and _viv.get("enabled"):
+        st.markdown('<div class="sec" data-n="04">Sheared current profile (drives VIV)</div>', unsafe_allow_html=True)
+        cv1, cv2 = dcols([2, 3])
+        cv1.plotly_chart(current_profile_fig(_viv), width="stretch", config={"displayModeBar": False})
+        cv2.caption("Power-law current U(h)=U_s·(h/d)^(1/7) (DNV-RP-C205). The current sets the "
+                    "vortex-shedding frequency and the reduced velocity that drives cross-flow VIV "
+                    "lock-in (see the Detection tab).")
     if _lt is not None:
-        st.markdown('<div class="sec">Long-term fatigue &middot; wave scatter-diagram summation '
+        st.markdown('<div class="sec" data-n="05">Long-term fatigue &middot; wave scatter-diagram summation '
                     '(DNV-RP-C203 &sect;5) &middot; D = &Sigma; p&#8202;D</div>', unsafe_allow_html=True)
         lt1, lt2 = dcols([3, 2])
         lt1.plotly_chart(scatter_fig(_lt), width="stretch", config={"displayModeBar": False})
@@ -1508,9 +1712,14 @@ with tab_env:
                     kpi("Top driver cell", f'Hs {_top["hs"]:.1f} / Tp {_top["tp"]:.0f}', "m/s", "amber"),
                     kpi("its damage share", f'{100*_top["damage_fraction"]:.0f}', "%", "amber"),
                 ]), unsafe_allow_html=True)
-            st.caption(f"Damage summed over {_lt['n_cells']} sea states weighted by occurrence "
-                       f"({_lt['source']}). Real SCR fatigue is dominated by rare storms - upload a "
-                       "project scatter table in the sidebar.")
+            st.caption(f"Damage summed over {_lt['n_cells']} sea states ({_lt['source']}).")
+        st.markdown('<div class="sec" data-n="06">Fatigue-driver cells &middot; ranked by damage share</div>',
+                    unsafe_allow_html=True)
+        st.markdown(data_table(
+            ["Hs [m]", "Tp [s]", "occurrence", "rate /yr", "damage share"],
+            [[f"{c['hs']:.2f}", f"{c['tp']:.1f}", f"{100*c['probability']:.2f}%",
+              f"{c['annual_rate']:.2e}", f"{100*c['damage_fraction']:.1f}%"]
+             for c in _lt["contributions"][:12]], value_cols=(0, 1, 2, 3, 4)), unsafe_allow_html=True)
 
 # ========================== SENSING ======================================== #
 with tab_sense:
@@ -1545,48 +1754,89 @@ with tab_sense:
         _badge = '<span class="tag syn">ILLUSTRATIVE / approximate - NOT project data</span>'
         _src = f' &nbsp;<span class="foot">route: {_tf["route"]}</span>'
     st.markdown(f'<div style="margin:-2px 0 8px">{_badge}{_src}</div>', unsafe_allow_html=True)
-    hc1, hc2 = dcols([3, 2])
-    hc1.plotly_chart(transfer_fig(_tf), width="stretch", config={"displayModeBar": False})
-    with hc2:
-        _peak = max(_tf["stress_mag"]) if _tf["stress_mag"] else 0.0
-        _ipk = _tf["stress_mag"].index(_peak) if _peak else 0
+    hm1, hm2 = dcols([1, 1])
+    hm1.markdown('<div class="sec">magnitude |H(f)|</div>', unsafe_allow_html=True)
+    hm1.plotly_chart(transfer_fig(_tf), width="stretch", config={"displayModeBar": False})
+    hm2.markdown('<div class="sec">phase ∠H(f)</div>', unsafe_allow_html=True)
+    hm2.plotly_chart(hf_phase_fig(_tf), width="stretch", config={"displayModeBar": False})
+    _peak = max(_tf["stress_mag"]) if _tf["stress_mag"] else 0.0
+    _ipk = _tf["stress_mag"].index(_peak) if _peak else 0
+    st.markdown(kpi_row([
+        kpi("Peak |H|", f"{_peak:.1f}", "MPa/m", "sig"),
+        kpi("at frequency", f'{_tf["freq"][_ipk]:.3f}', "Hz"),
+        kpi("route", _tf["route"]),
+        kpi("validated", "YES" if _tf["is_validated"] else "NO", "", "sig" if _tf["is_validated"] else "amber"),
+    ]), unsafe_allow_html=True)
+    if not _tf["is_validated"]:
+        st.caption("Import a validated OrcaFlex/RIFLEX/DeepLines H(f) (sidebar) for a "
+                   "project-grade TDP stress transfer; the magnitude AND phase are both applied.")
+    _dh = payload.get("data_health")
+    if _dh:
+        st.markdown('<div class="sec">Data-health checks (ingest gate)</div>', unsafe_allow_html=True)
         st.markdown(kpi_row([
-            kpi("Peak |H|", f"{_peak:.1f}", "MPa/m", "sig"),
-            kpi("at frequency", f'{_tf["freq"][_ipk]:.3f}', "Hz"),
-        ]), unsafe_allow_html=True)
-        if not _tf["is_validated"]:
-            st.caption("Import a validated OrcaFlex/RIFLEX/DeepLines H(f) (sidebar) for a "
-                       "project-grade TDP stress transfer.")
+            kpi("Health", "OK" if _dh.get("ok") else "FAIL", "", "sig" if _dh.get("ok") else "alarm"),
+        ] + [kpi(str(k), f"{v:.3g}" if isinstance(v, (int, float)) else str(v))
+             for k, v in list(_dh.items())[:4] if k not in ("ok", "flags")]),
+            unsafe_allow_html=True)
 
 # ========================== DETECTION ====================================== #
 with tab_detect:
     st.caption("Damage detection: rainflow + S-N + Miner, the spectral cross-check, and "
                "the VIV screening - the mechanisms that consume fatigue life.")
-    st.markdown('<div class="sec">Rainflow &middot; S-N &middot; Miner (DNV-RP-C203 / ASTM E1049)</div>',
+    st.markdown('<div class="eq">D = &#8721;<sub>i</sub> n<sub>i</sub>/N(&#916;&#963;<sub>i</sub>),&nbsp; '
+                'log N = log a&#772; &minus; m&#183;log&#916;&#963;,&nbsp; life = 1/(D&#183;f<sub>yr</sub>) '
+                '<span class="c"># Palmgren-Miner on the two-slope DNV S-N curve</span></div>',
+                unsafe_allow_html=True)
+    st.markdown('<div class="sec" data-n="01">Rainflow &middot; S-N &middot; Miner (DNV-RP-C203 / ASTM E1049)</div>',
                 unsafe_allow_html=True)
     st.markdown(kpi_row([
         kpi("Annual damage (time)", f'{dmg["annual_rate_time"]:.2e}', "/yr", "amber"),
         kpi("Spectral (Dirlik)", f'{dmg["annual_rate_spectral"]:.2e}', "/yr"),
+        kpi("time/spectral ratio", f'{(dmg["annual_rate_spectral"]/dmg["annual_rate_time"]):.2f}'
+            if dmg["annual_rate_time"] else "-", "", "sig"),
         kpi("Block damage", f'{dmg["block_damage"]:.2e}'),
         kpi("S-N class", cfg.riser.sn_class),
     ]), unsafe_allow_html=True)
     l2a, l2b = dcols([1, 1])
+    l2a.markdown('<div class="sec" data-n="02">DNV S-N curve family</div>', unsafe_allow_html=True)
     l2a.plotly_chart(sn_family_fig(cfg.riser.sn_class, cfg.riser.sn_environment),
                      width="stretch", config={"displayModeBar": False})
     if _ver is not None:
-        l2b.plotly_chart(dirlik_verify_fig(_ver), width="stretch", config={"displayModeBar": False})
-        l2b.caption("Verification: rainflow histogram vs the Dirlik and narrow-band spectral PDFs.")
-    if _viv is not None and _viv.get("enabled"):
-        st.markdown('<div class="sec">Vortex-induced vibration (VIV) screening &middot; '
-                    'DNV-RP-F204 &middot; <span class="tag amber">SCREENING - not design</span></div>',
+        l2b.markdown('<div class="sec" data-n="03">Rainflow range histogram (counted cycles)</div>',
+                     unsafe_allow_html=True)
+        l2b.plotly_chart(rainflow_hist_fig(_ver), width="stretch", config={"displayModeBar": False})
+    if _ver is not None:
+        st.markdown('<div class="sec" data-n="04">Spectral cross-check &middot; Dirlik / narrow-band vs rainflow</div>',
                     unsafe_allow_html=True)
+        st.plotly_chart(dirlik_verify_fig(_ver), width="stretch", config={"displayModeBar": False})
+        st.caption("The spectral (Dirlik) and time-domain (rainflow) pathways use the SAME S-N law "
+                   "and agree within ~15% - the twin's internal fatigue verification.")
+    st.markdown('<div class="sec" data-n="05">Mean-stress &amp; thickness corrections applied</div>',
+                unsafe_allow_html=True)
+    st.markdown(kpi_row([
+        kpi("Mean-stress model", str(prov.get("mean_stress_model", "none"))),
+        kpi("Applied", "YES" if prov.get("mean_stress_applied") else "NO", "",
+            "amber" if prov.get("mean_stress_applied") else ""),
+        kpi("Static mean stress", f'{prov.get("static_mean_stress_pa", 0)/1e6:.1f}', "MPa"),
+        kpi("Thickness t_ref", f'{cfg.riser.thickness_for_correction*1e3:.1f}', "mm"),
+    ]), unsafe_allow_html=True)
+    if _viv is not None and _viv.get("enabled"):
+        st.markdown('<div class="sec" data-n="06">Vortex-induced vibration (VIV) &middot; '
+                    'DNV-RP-F204 <span class="tag amber">SCREENING</span></div>', unsafe_allow_html=True)
         st.markdown(kpi_row([
             kpi("Combined wave+VIV life", life(_comb_life), "yr", "sig"),
             kpi("VIV-only life", life(_viv["life_years"]), "yr", "amber"),
-            kpi("Dominant VIV mode", f'{_viv["dominant_mode"]}'),
-            kpi("Surface current", f'{_viv["current_surface_velocity"]:.2f}', "m/s"),
+            kpi("Wave rate /yr", f'{_comb["wave_rate"]:.2e}' if _comb else "-"),
+            kpi("VIV rate /yr", f'{_comb["viv_rate"]:.2e}' if _comb else "-", "", "amber"),
             kpi("Stability param Ks", f'{_viv["stability_parameter"]:.2f}'),
         ]), unsafe_allow_html=True)
+        _excd = [m for m in _viv["modes"] if m["excited"]]
+        if _excd:
+            st.markdown(data_table(
+                ["Mode", "fn [Hz]", "Vr", "A/D", "Δσ [MPa]", "damage /yr"],
+                [[str(m["mode"]), f"{m['frequency_hz']:.3f}", f"{m['reduced_velocity']:.1f}",
+                  f"{m['a_over_d']:.2f}", f"{m['stress_range_mpa']:.1f}", f"{m['annual_damage_rate']:.2e}"]
+                 for m in _excd[:10]], value_cols=(1, 2, 3, 4, 5)), unsafe_allow_html=True)
         st.caption("Combined life adds the wave and VIV damage rates by Miner. VIV is a Griffin "
                    "A/D lock-in upper bound - design-grade VIV needs Shear7 / VIVANA.")
 
@@ -1594,14 +1844,30 @@ with tab_detect:
 with tab_assim:
     st.caption("Probabilistic remaining life: the Monte Carlo posterior, the Bayesian "
                "contraction as monitoring accrues, and the design-vs-actual divergence.")
+    st.markdown('<div class="eq">&#955; ~ &#928;<sub>k</sub> m<sub>k</sub>&#183;&#955;&#8320;,&nbsp; '
+                'life = (1&minus;D)/&#955;;&nbsp; posterior: prec = 1/&#964;&#8320;&#178; + n<sub>eff</sub>/s&#178; '
+                '<span class="c"># MC uncertainty propagation + Bayesian AR(1) update</span></div>',
+                unsafe_allow_html=True)
+    st.markdown(kpi_row([
+        kpi("P10", life(post["p10"]), "yr", "amber"),
+        kpi("P50 median", life(post["p50"]), "yr", "sig"),
+        kpi("P90", life(post["p90"]), "yr"),
+        kpi("P90/P10 spread", f'{post["p90"]/post["p10"]:.1f}' if post["p10"] else "-", "x"),
+        kpi("MC members", f'{post["n_members"]:,}'),
+    ]), unsafe_allow_html=True)
     st.markdown(
-        f'<div class="sec">Remaining-life posterior &middot; {post["n_members"]:,} MC members &middot; '
+        f'<div class="sec" data-n="01">Remaining-life posterior &middot; {post["n_members"]:,} MC members &middot; '
         'Bayesian contraction (90% CI ~ 1/&radic;T)</div>', unsafe_allow_html=True)
     pc1, pc2 = dcols([3, 2])
     pc1.plotly_chart(fan_fig(payload["bayesian_fan"], post["p50"]), width="stretch", config={"displayModeBar": False})
     pc2.plotly_chart(pdf_hist_fig(post), width="stretch", config={"displayModeBar": False})
+    st.markdown('<div class="sec" data-n="02">Posterior CDF &middot; probability of exceeding a target life</div>',
+                unsafe_allow_html=True)
+    st.plotly_chart(cdf_fig(post), width="stretch", config={"displayModeBar": False})
+    st.caption("Cumulative distribution of the Monte-Carlo remaining-life posterior - read off the "
+               "probability the life falls below any design target.")
     if _dfan is not None:
-        st.markdown('<div class="sec">Accumulated-damage divergence &middot; design vs actual wave climate '
+        st.markdown('<div class="sec" data-n="03">Accumulated-damage divergence &middot; design vs actual wave climate '
                     '(spec &sect;5 gate)</div>', unsafe_allow_html=True)
         vd1, vd2 = dcols([3, 2])
         vd1.plotly_chart(divergence_fan_fig(_dfan), width="stretch", config={"displayModeBar": False})
@@ -1616,7 +1882,11 @@ with tab_assim:
 # ========================== ECONOMICS ====================================== #
 with tab_econ:
     st.caption("The inspection decision and the conditional value of monitoring.")
-    st.markdown('<div class="sec">Risk-based inspection schedule</div>', unsafe_allow_html=True)
+    st.markdown('<div class="eq">&#916;C = &#8721;<sub>t</sub> [C<sub>base</sub>&minus;C<sub>cbm</sub>]/(1+r)<sup>t</sup> '
+                '&minus; C<sub>sensor</sub>,&nbsp; C<sub>cbm</sub> = &#966;&#183;PV<sub>slow</sub> + '
+                '(1&minus;&#966;)&#183;PV<sub>fast</sub> <span class="c"># Eq. 11 conditional CBM economics</span></div>',
+                unsafe_allow_html=True)
+    st.markdown('<div class="sec" data-n="01">Risk-based inspection schedule</div>', unsafe_allow_html=True)
     dc1, dc2 = dcols([3, 2])
     dc1.plotly_chart(pof_fig(insp), width="stretch", config={"displayModeBar": False})
     with dc2:
@@ -1631,7 +1901,7 @@ with tab_econ:
     _net_tone = "sig" if econ.get("net_positive") else "alarm"
     _net = econ["fleet_delta_c_usd"] / 1e6
     _phi_src = "from posterior" if econ.get("phi_is_endogenous") else "break-even ref"
-    st.markdown('<div class="sec">Conditional economics (Eq. 11) &middot; discounted value of monitoring vs &phi;</div>',
+    st.markdown('<div class="sec" data-n="02">Conditional economics (Eq. 11) &middot; discounted value of monitoring vs &phi;</div>',
                 unsafe_allow_html=True)
     ec1, ec2 = dcols([3, 2])
     ec1.plotly_chart(econ_fig(econ), width="stretch", config={"displayModeBar": False})
@@ -1648,6 +1918,19 @@ with tab_econ:
         st.caption(f"The sensor pays only when φ > φ*={econ['breakeven_phi']:.2f}; at r="
                    f"{econ['discount_rate']*100:.0f}% discount this fleet's φ={econ['phi']:.2f} makes it a "
                    f"net {'gain' if econ.get('net_positive') else 'cost'}.")
+    st.markdown('<div class="sec" data-n="03">Discounted present-value cash-flow (per unit)</div>',
+                unsafe_allow_html=True)
+    _u = econ["n_units"]
+    st.markdown(data_table(
+        ["Cash-flow component", "PV per unit", "Basis"],
+        [["Calendar inspections (baseline)", f"${econ['pv_baseline_usd']/1e6:.2f}M", "fixed interval"],
+         ["CBM inspections — ages slower", f"${econ['pv_cbm_slow_usd']/1e6:.2f}M", "defer (φ)"],
+         ["CBM inspections — ages faster", f"${econ['pv_cbm_fast_usd']/1e6:.2f}M", "tighten (1−φ)"],
+         ["Sensor capex + PV opex", f"${econ['pv_sensor_usd']/1e6:.2f}M", "monitoring"],
+         ["Net value ΔC per unit", f"${econ['per_unit_delta_c_usd']/1e6:+.2f}M", "Eq. 11"],
+         [f"Net value ΔC — fleet ({_u} units)", f"${econ['fleet_delta_c_usd']/1e6:+.1f}M",
+          "gain" if econ.get("net_positive") else "cost"]],
+        value_cols=(1,)), unsafe_allow_html=True)
 
 # ========================== LEDGER ========================================= #
 with tab_ledger:
@@ -1666,26 +1949,55 @@ with tab_ledger:
         ("Identified sea state Hs / Tp", f"{sea['hs']:.2f} m / {sea['tp']:.1f} s", "JONSWAP fit"),
         ("Annual damage (time / spectral)", f"{dmg['annual_rate_time']:.2e} / {dmg['annual_rate_spectral']:.2e} /yr", "rainflow / Dirlik"),
     ]
-    _tbl = ['<table class="ledger"><thead><tr><th>Quantity</th><th>Value</th><th>Basis</th></tr></thead><tbody>']
-    for q, v, b in _rows:
-        _tbl.append(f'<tr><td>{q}</td><td class="lv">{v}</td><td class="lb">{b}</td></tr>')
-    _tbl.append("</tbody></table>")
-    st.markdown("".join(_tbl), unsafe_allow_html=True)
+    st.markdown('<div class="sec" data-n="01">Results</div>', unsafe_allow_html=True)
+    st.markdown(data_table(["Quantity", "Value", "Basis"],
+                           [[q, v, b] for q, v, b in _rows], value_cols=(1,)), unsafe_allow_html=True)
+    st.markdown('<div class="sec" data-n="02">Input configuration (this run)</div>', unsafe_allow_html=True)
+    _rc = cfg.riser
+    st.markdown(data_table(
+        ["Input", "Value", "Field"],
+        [["Riser OD × WT", f"{_rc.outer_diameter*1e3:.1f} × {_rc.wall_thickness*1e3:.2f} mm", "riser"],
+         ["Material / UTS", f"{_rc.material_grade} / {_rc.ultimate_strength/1e6:.0f} MPa", "riser"],
+         ["Water depth / hang-off", f"{_rc.water_depth:.0f} m / {_rc.hang_off_angle_deg:.0f}°", "riser"],
+         ["SCF / S-N class / env", f"{_rc.scf:.2f} / {_rc.sn_class} / {_env_now}", "riser"],
+         ["DFF / design life", f"{_rc.design_fatigue_factor:.0f}× / {_rc.design_service_life_years:.0f} yr", "riser"],
+         ["Mean-stress / as-welded", f"{_rc.mean_stress_model.value} / {_rc.as_welded}", "riser"],
+         ["Transfer route", cfg.transfer.route, "transfer"],
+         ["Surface current", f"{cfg.viv.surface_current:.2f} m/s", "viv"],
+         ["Monte-Carlo members / seed", f"{cfg.n_monte_carlo:,} / {cfg.seed}", "analysis"],
+         ["Config SHA-256", prov["config_sha256"][:24] + "…", "provenance"]],
+        value_cols=(1,)), unsafe_allow_html=True)
 
 # ========================== PROVENANCE ===================================== #
 with tab_prov:
     st.caption("Reproducibility and verification: the acceptance gates and the exact "
                "inputs / library versions behind this run, plus downloadable reports.")
+    st.markdown(f'<div class="sec" data-n="01">Acceptance gates &middot; {gates_ok}/{len(g)} passing '
+                '(independent re-derivation, spec &sect;5)</div>', unsafe_allow_html=True)
+    st.markdown(data_table(
+        ["Gate", "Category", "Target", "Actual", "Status"],
+        [[x["name"], x["category"], x["target"], x["actual"],
+          '<span style="color:#1f8a5b">PASS</span>' if x["passed"] else '<span style="color:#c0432f">FAIL</span>']
+         for x in g], value_cols=(3,)), unsafe_allow_html=True)
+    st.markdown('<div class="sec" data-n="02">Claim → evidence map</div>', unsafe_allow_html=True)
+    st.markdown(data_table(
+        ["Paper claim", "Where it is proven", "Standard"],
+        [["Hs recovered from motion spectrum", "JONSWAP gate + Environment tab", "4√m0"],
+         ["Catenary shape / TDP curvature closed-form", "Catenary gate + Structure tab", "DNV-OS-F201"],
+         ["Spectral & time-domain damage agree", "Dirlik-vs-rainflow gate + Detection tab", "<15% band"],
+         ["Seawater-CP S-N knee at 1e6 cycles", "Seawater-CP gate", "DNV-RP-C203 T2-2"],
+         ["Bayesian CI halves by year 4", "Bayesian 1/√T gate + Assimilation tab", "AR(1) n_eff"],
+         ["Divergence P10≈5% / P90≈28% @ yr15", "Divergence gate + Assimilation tab", "spec §5"],
+         ["Conditional economics break-even φ*", "Economics gate + Economics tab", "Eq. 11"],
+         ["Byte-identical for identical seed", "Determinism gate", "reproducible"]],
+        value_cols=(1,)), unsafe_allow_html=True)
     vc1, vc2 = dcols([3, 2])
     with vc1:
-        st.markdown('<div class="sec">Validation gates (spec section 5)</div>', unsafe_allow_html=True)
-        for x in g:
-            dot = GOOD if x["passed"] else ALARM
-            st.markdown(
-                f'<div class="gate"><span class="dot" style="background:{dot}"></span>'
-                f'<span>{x["name"]}</span><span class="actual">{x["actual"]}</span></div>',
-                unsafe_allow_html=True,
-            )
+        st.markdown('<div class="sec">Reproducibility</div>', unsafe_allow_html=True)
+        st.markdown(f'<div class="note">Every result is reproducible from the exported bundle: the '
+                    f'validated config (SHA-256 <code>{prov["config_sha256"][:16]}</code>), the seed '
+                    f'(<code>{prov["seed"]}</code>) and the library versions. Re-running with the same '
+                    'inputs is byte-identical (Determinism gate).</div>', unsafe_allow_html=True)
     with vc2:
         st.markdown('<div class="sec">Provenance</div>', unsafe_allow_html=True)
         st.markdown(
