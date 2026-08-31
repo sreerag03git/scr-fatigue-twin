@@ -67,14 +67,24 @@ class BayesianRateEstimator:
         Per-block observation std ``s`` of the annual-rate estimate.
     """
 
-    def __init__(self, prior_mean: float, block_obs_std: float, *, prior_std: float | None = None) -> None:
+    def __init__(
+        self,
+        prior_mean: float,
+        block_obs_std: float,
+        *,
+        prior_std: float | None = None,
+        obs_ar1: float = 0.0,
+    ) -> None:
         if block_obs_std <= 0.0:
             raise ValueError("block_obs_std must be positive")
         if prior_mean < 0.0:
             raise ValueError("prior_mean must be non-negative")
+        if not (0.0 <= obs_ar1 < 1.0):
+            raise ValueError("obs_ar1 (AR(1) lag-1 correlation) must be in [0, 1)")
         self._mu0 = prior_mean
         self._tau0 = prior_std if prior_std is not None else max(prior_mean * 10.0, 1e-9)
         self._s = block_obs_std
+        self._phi = obs_ar1
         self._n = 0
         self._sum_y = 0.0
 
@@ -91,9 +101,27 @@ class BayesianRateEstimator:
         self.update_block(block_damage / block_seconds * seconds_per_year)
 
     def posterior(self) -> RatePosterior:
-        """Current posterior on the annual damage rate."""
-        precision = 1.0 / self._tau0**2 + self._n / self._s**2
-        mean = (self._mu0 / self._tau0**2 + self._sum_y / self._s**2) / precision
+        """Current posterior on the annual damage rate.
+
+        Autocorrelated block observations carry less information than the same
+        number of independent ones, so the data precision uses the AR(1)
+        effective sample size ``n_eff = n (1 - phi)/(1 + phi)`` (variance-inflation
+        factor ``(1+phi)/(1-phi)``) rather than ``n``. With ``phi = 0`` this
+        reduces exactly to the i.i.d. conjugate update, so the ``1/sqrt(T)``
+        contraction is preserved (the correction is a constant width factor that
+        cancels in the year-4/year-1 ratio) while the absolute band widens
+        honestly.
+        """
+        if self._n > 0:
+            vif = (1.0 + self._phi) / (1.0 - self._phi)
+            n_eff = self._n / vif
+            data_prec = n_eff / self._s**2
+            ybar = self._sum_y / self._n
+        else:
+            data_prec = 0.0
+            ybar = 0.0
+        precision = 1.0 / self._tau0**2 + data_prec
+        mean = (self._mu0 / self._tau0**2 + data_prec * ybar) / precision
         std = 1.0 / math.sqrt(precision)
         return RatePosterior(
             mean=mean,

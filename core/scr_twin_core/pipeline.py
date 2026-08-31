@@ -24,10 +24,10 @@ from . import __version__
 from .config import AnalysisConfig
 from .environment import EnvironmentCorrection
 from .hang_off_kinematics import resolve_hang_off
-from .miner import SECONDS_PER_YEAR, DamageResult, block_damage
+from .miner import SECONDS_PER_YEAR, DamageResult, FatigueAcceptance, block_damage, dff_acceptance
 from .montecarlo import MonteCarloResult, UncertaintyModel, run_monte_carlo
-from .rainflow import count_cycles
-from .sn import SNCurve, get_curve
+from .rainflow import count_cycles, range_histogram
+from .sn import MeanStressModel, SNCurve, get_curve
 from .spectral import SeaState, fit_jonswap, spectral_moments, welch_psd
 from .spectral_damage import dirlik_damage_rate_curve
 from .stress import (
@@ -58,6 +58,9 @@ class Provenance(BaseModel):
     transfer_route: str = "reference"
     transfer_is_validated: bool = False
     transfer_source: str = ""
+    mean_stress_model: str = "none"
+    mean_stress_applied: bool = False
+    static_mean_stress_pa: float = 0.0
 
 
 @dataclass(frozen=True)
@@ -75,10 +78,14 @@ class FullResult:
     transfer_route: str
     transfer_provenance: dict
     dof_contributions: dict
+    catenary_profile: dict
+    rainflow_hist: dict
+    spectral_moments: dict
     time_domain_block: DamageResult
     annual_damage_rate_time: float
     annual_damage_rate_spectral: float
     deterministic_life_years: float
+    fatigue_acceptance: FatigueAcceptance
     monte_carlo: MonteCarloResult
     environment_factor: float
     environment: EnvironmentCorrection | None
@@ -94,6 +101,8 @@ class FullResult:
             "annual_damage_rate_time": self.annual_damage_rate_time,
             "annual_damage_rate_spectral": self.annual_damage_rate_spectral,
             "deterministic_life_years": self.deterministic_life_years,
+            "fatigue_utilisation": self.fatigue_acceptance.utilisation,
+            "fatigue_passes": self.fatigue_acceptance.passes,
             "life_p10": self.monte_carlo.p10,
             "life_p50": self.monte_carlo.p50,
             "life_p90": self.monte_carlo.p90,
@@ -155,7 +164,7 @@ def run_full_analysis(
     riser = config.riser
     section = riser.pipe_section()
     catenary = riser.catenary()
-    base_curve = get_curve(riser.sn_class)
+    base_curve = get_curve(riser.sn_class, riser.sn_environment)
     correction = config.environment.correction()
     curve, env_factor = _corrected_curve(base_curve, correction)
 
@@ -216,11 +225,35 @@ def run_full_analysis(
     stress = stress_history_from_motion(x, fs, tf_time, section, scf=riser.scf)
     cycles = count_cycles(stress)
     duration = x.size / fs
+
+    # Mean-stress correction (DNV-RP-C203 Sec. 2.3 / mean-stress guidance).
+    # As-welded girth welds carry near-yield tensile residual stress, so DNV
+    # permits NO mean-stress benefit: the correction is suppressed and the full
+    # range is used. For base-material / stress-relieved details the configured
+    # model rides on the standing (static) hot-spot mean - by default the axial
+    # membrane stress T_TDP/A_steel from the catenary (the wave-induced dynamic
+    # mean alone is ~0 through the bending transfer, so an explicit static offset
+    # is what makes the correction physical).
+    static_mean = (
+        riser.static_mean_stress
+        if riser.static_mean_stress is not None
+        else catenary.horizontal_tension / section.steel_area
+    )
+    resolved_mean_model = (
+        MeanStressModel.NONE if riser.as_welded else riser.mean_stress_model
+    )
+    mean_stress_applied = resolved_mean_model is not MeanStressModel.NONE
     td_block = block_damage(
-        cycles, curve, duration, thickness_m=riser.thickness_for_correction
+        cycles, curve, duration, thickness_m=riser.thickness_for_correction,
+        mean_stress_model=resolved_mean_model,
+        ultimate_strength_pa=riser.ultimate_strength,
+        static_mean_pa=static_mean if mean_stress_applied else 0.0,
     )
     annual_rate_time = td_block.damage_rate_per_year
     life_years = float("inf") if annual_rate_time <= 0.0 else 1.0 / annual_rate_time
+    acceptance = dff_acceptance(
+        life_years, riser.design_service_life_years, riser.design_fatigue_factor
+    )
 
     # --- Spectral pathway (Dirlik against the two-slope curve) as a cross-check ---
     tf_spec = build_tf(f_w)
@@ -233,6 +266,27 @@ def run_full_analysis(
         annual_rate_spectral = dirlik_per_s * SECONDS_PER_YEAR
     else:
         annual_rate_spectral = 0.0
+
+    # --- Figure data: catenary profile, rainflow range histogram, moments ---
+    prof_x = np.linspace(0.0, catenary.horizontal_span, 200)
+    prof_y = catenary.shape(prof_x)
+    catenary_profile = {
+        "x": prof_x, "y": prof_y,
+        "catenary_parameter": catenary.catenary_parameter,
+        "horizontal_span": catenary.horizontal_span,
+        "arc_length": catenary.arc_length,
+        "water_depth": catenary.water_depth,
+        "tdp_curvature": catenary.tdp_curvature,
+        "top_angle_deg": float(np.degrees(catenary.top_angle)),
+    }
+    if cycles.ranges.size and float(cycles.ranges.max()) > 0.0:
+        edges = np.linspace(0.0, float(cycles.ranges.max()), 41)
+        hist_counts = range_histogram(cycles, edges)
+    else:
+        edges = np.linspace(0.0, 1.0, 41)
+        hist_counts = np.zeros(40, dtype=np.float64)
+    rainflow_hist = {"edges": edges, "counts": hist_counts, "stress_to_mpa": 1.0e-6}
+    spectral_moments_out = {int(k): float(v) for k, v in moments.items()}
 
     # --- |H(f)| curve for the Fig-4 transfer-function view (wave band) ---
     # Reported both as TDP moment transfer [N m per m heave] and, matching the
@@ -264,6 +318,9 @@ def run_full_analysis(
         transfer_route=tcfg.route,
         transfer_is_validated=transfer_is_validated,
         transfer_source=transfer_source,
+        mean_stress_model=str(resolved_mean_model.value),
+        mean_stress_applied=mean_stress_applied,
+        static_mean_stress_pa=float(static_mean if mean_stress_applied else 0.0),
     )
 
     return FullResult(
@@ -278,10 +335,14 @@ def run_full_analysis(
         transfer_route=tcfg.route,
         transfer_provenance=transfer_provenance,
         dof_contributions=dof_contributions,
+        catenary_profile=catenary_profile,
+        rainflow_hist=rainflow_hist,
+        spectral_moments=spectral_moments_out,
         time_domain_block=td_block,
         annual_damage_rate_time=annual_rate_time,
         annual_damage_rate_spectral=annual_rate_spectral,
         deterministic_life_years=life_years,
+        fatigue_acceptance=acceptance,
         monte_carlo=mc,
         environment_factor=env_factor,
         environment=correction,

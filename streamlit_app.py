@@ -42,6 +42,14 @@ from scr_twin_core.config import (  # noqa: E402
     RiserConfig,
     TransferConfig,
 )
+from scr_twin_core.sn import (  # noqa: E402
+    DNV_C203_IN_AIR,
+    MeanStressModel,
+    SNEnvironment,
+    cycles_to_failure,
+    get_curve,
+)
+from scr_twin_core.spectral_damage import dirlik_range_pdf  # noqa: E402
 from server import service  # noqa: E402
 
 # --------------------------------------------------------------------------- #
@@ -409,6 +417,92 @@ def econ_fig(econ: dict) -> go.Figure:
     return f
 
 
+def catenary_fig(cat: dict) -> go.Figure:
+    """Static catenary profile: riser shape from the TDP (origin) to the hang-off."""
+    f = _fig(250)
+    f.add_scatter(x=cat["x"], y=cat["y"], line=dict(color=SIGNAL2, width=2.4),
+                  fill="tozeroy", fillcolor="rgba(15,143,156,0.06)", name="riser")
+    f.add_scatter(x=[0.0], y=[0.0], mode="markers+text", text=["TDP"], textposition="top right",
+                  marker=dict(color=AMBER, size=9), textfont=dict(color=AMBER, size=10))
+    f.add_scatter(x=[cat["horizontal_span"]], y=[cat["water_depth"]], mode="markers+text",
+                  text=["hang-off"], textposition="bottom left",
+                  marker=dict(color=SIGNAL2, size=9), textfont=dict(color=SIGNAL2, size=10))
+    f.update_layout(
+        xaxis=dict(title="horizontal offset from TDP [m]", gridcolor=GRID, zeroline=False),
+        yaxis=dict(title="height above TDP [m]", gridcolor=GRID, zeroline=False,
+                   scaleanchor="x", scaleratio=1.0))
+    return f
+
+
+def sn_family_fig(sn_class: str, environment: SNEnvironment) -> go.Figure:
+    """DNV-RP-C203 S-N curve family (log-log), the selected class highlighted."""
+    f = _fig(250)
+    s_mpa = np.logspace(np.log10(8.0), np.log10(1200.0), 240)
+    for name in DNV_C203_IN_AIR:
+        n = cycles_to_failure(s_mpa * 1e6, get_curve(name, environment))
+        sel = name == sn_class
+        f.add_scatter(
+            x=n, y=s_mpa, mode="lines",
+            line=dict(color=SIGNAL if sel else "#c7d2d8", width=2.6 if sel else 1.0),
+            name=name, hoverinfo="name" if not sel else "x+y+name",
+        )
+    f.update_layout(
+        xaxis=dict(title="Cycles to failure N", type="log", gridcolor=GRID, zeroline=False),
+        yaxis=dict(title="Stress range [MPa]", type="log", gridcolor=GRID, zeroline=False),
+        annotations=[dict(x=0.03, y=0.06, xref="paper", yref="paper",
+                          text=f"DNV {sn_class} - {'seawater/CP' if environment==SNEnvironment.SEAWATER_CP else 'in air'}",
+                          showarrow=False, font=dict(color=SIGNAL, size=10))])
+    return f
+
+
+def dirlik_verify_fig(ver: dict) -> go.Figure:
+    """Rainflow range histogram vs the Dirlik and narrow-band (Rayleigh) PDFs."""
+    f = _fig(250)
+    edges = np.asarray(ver["hist_edges_mpa"], dtype=float)
+    counts = np.asarray(ver["hist_counts"], dtype=float)
+    centres = 0.5 * (edges[:-1] + edges[1:])
+    widths = np.diff(edges)
+    total = counts.sum()
+    density = counts / (total * widths) if total > 0 and np.all(widths > 0) else counts * 0.0
+    f.add_bar(x=centres, y=density, marker_color="rgba(15,143,156,0.30)",
+              marker_line_color=SIGNAL, marker_line_width=0.3, name="rainflow")
+    moments = {int(k): float(v) for k, v in ver["moments"].items()}
+    s = np.linspace(max(edges[1] * 0.05, 1e-3), edges[-1], 300)
+    if moments.get(0, 0.0) > 0.0 and moments.get(2, 0.0) > 0.0 and moments.get(4, 0.0) > 0.0:
+        dk = dirlik_range_pdf(s, moments, stress_to_mpa=ver["stress_to_mpa"])
+        f.add_scatter(x=s, y=dk, line=dict(color=SIGNAL2, width=2.2), name="Dirlik")
+        sigma = ver["sigma_mpa"]
+        if sigma > 0.0:
+            rayleigh = (s / (4.0 * sigma**2)) * np.exp(-(s**2) / (8.0 * sigma**2))
+            f.add_scatter(x=s, y=rayleigh, line=dict(color=AMBER, width=1.6, dash="dash"),
+                          name="narrow-band")
+    f.update_layout(
+        showlegend=True, legend=dict(font=dict(size=9), orientation="h", y=1.02, x=0.55),
+        xaxis=dict(title="Stress range [MPa]", gridcolor=GRID, zeroline=False),
+        yaxis=dict(title="probability density", gridcolor=GRID, zeroline=False, rangemode="tozero"))
+    return f
+
+
+def divergence_fan_fig(dfan: dict) -> go.Figure:
+    """Accumulated-damage divergence (actual/design - 1) vs year, in percent."""
+    f = _fig(250)
+    yrs = dfan["years"]
+    p10 = [100.0 * v for v in dfan["p10"]]
+    p50 = [100.0 * v for v in dfan["p50"]]
+    p90 = [100.0 * v for v in dfan["p90"]]
+    f.add_scatter(x=yrs, y=p90, line=dict(width=0), hoverinfo="skip")
+    f.add_scatter(x=yrs, y=p10, fill="tonexty", line=dict(width=0),
+                  fillcolor="rgba(180,121,26,0.15)", hoverinfo="skip")
+    f.add_scatter(x=yrs, y=p50, line=dict(color=SIGNAL2, width=2.4), name="P50")
+    f.add_vline(x=15, line=dict(color=TEXT, width=0.8, dash="dot"),
+                annotation_text="spec gate @yr15: P10≈5% / P90≈28%",
+                annotation_font_size=9, annotation_font_color=TEXT, annotation_position="top left")
+    f.update_layout(
+        xaxis=dict(title="year", gridcolor=GRID, zeroline=False),
+        yaxis=dict(title="actual/design accumulated damage - 1 [%]", gridcolor=GRID, zeroline=False))
+    return f
+
+
 # --------------------------------------------------------------------------- #
 # PDF report (matplotlib charts + fpdf2; ASCII text for the core fonts)
 # --------------------------------------------------------------------------- #
@@ -519,11 +613,22 @@ def build_pdf(config_json: str, source_kind: str, payload_json: str) -> bytes:
         ("JONSWAP gamma", f"{sea['gamma']:.1f}")])
     pdf.ln(1)
     section("Fatigue result")
-    kv([
+    _acc = dmg.get("acceptance")
+    _rows = [
         ("Deterministic life", f"{life(dmg['deterministic_life_years'])} yr"),
         ("Annual damage (time / spectral)", f"{dmg['annual_rate_time']:.2e}  /  {dmg['annual_rate_spectral']:.2e} /yr"),
         ("Remaining life P10 / P50 / P90", f"{life(post['p10'])} / {life(post['p50'])} / {life(post['p90'])} yr"),
-    ])
+    ]
+    if _acc is not None:
+        _env = {"in_air": "in air", "seawater_cp": "seawater w/ CP"}.get(
+            dmg.get("sn_environment", "in_air"), "in air")
+        _rows.append(("S-N environment", _env))
+        _rows.append((
+            "DFF acceptance",
+            f"util {_acc['utilisation']:.2f}  (DFF {_acc['dff']:.0f} x {_acc['design_service_life_years']:.0f} yr)"
+            f"  ->  {'PASS' if _acc['passes'] else 'FAIL'}",
+        ))
+    kv(_rows)
     pdf.ln(1)
     section("Decision")
     _net = f"${econ['fleet_delta_c_usd']/1e6:+.1f}M ({econ['n_units']}u, {econ['horizon_yr']:.0f}yr)"
@@ -645,6 +750,22 @@ with st.sidebar.expander("Steel catenary riser", expanded=True):
     ang = st.number_input("Hang-off [deg from vertical]", 1.0, 45.0, ref.hang_off_angle_deg, 1.0)
     scf = st.number_input("SCF", 1.0, 5.0, ref.scf, 0.05)
     sn_class = st.selectbox("DNV S-N class", SN_CLASSES, index=SN_CLASSES.index(ref.sn_class))
+    _sn_env_label = st.selectbox(
+        "S-N environment", ["in air (Table 2-1)", "seawater w/ CP (Table 2-2)"], index=0,
+        help="Seawater-with-cathodic-protection moves the slope change to 1e6 cycles "
+             "(DNV-RP-C203 Table 2-2) - more severe in the wave band than the in-air curve.",
+    )
+    sn_env = SNEnvironment.SEAWATER_CP if _sn_env_label.startswith("seawater") else SNEnvironment.IN_AIR
+
+with st.sidebar.expander("Acceptance & mean stress"):
+    dff = st.number_input("Design Fatigue Factor (DFF)", 1.0, 10.0, 3.0, 1.0,
+                          help="DNV-OS-F201: predicted life must exceed DFF x design service life.")
+    design_life = st.number_input("Design service life [yr]", 5.0, 60.0, 25.0, 5.0)
+    _ms_label = st.selectbox("Mean-stress model", ["none", "goodman", "gerber", "swt"], index=0,
+                             help="Rides on the static axial tension mean (T_TDP/A_steel).")
+    ms_model = MeanStressModel(_ms_label)
+    as_welded = st.checkbox("As-welded (DNV: no mean-stress benefit)", value=True,
+                            help="Uncheck for base-material / stress-relieved details to let the model act.")
 
 with st.sidebar.expander("Hang-off geometry (6-DOF, Eq. 6)"):
     st.caption("Resolves 6-DOF MRU motion to the porch: z_ho = heave - x_p*pitch + y_p*roll.")
@@ -687,6 +808,9 @@ try:
         riser=RiserConfig(
             outer_diameter=od, wall_thickness=wt, water_depth=depth,
             hang_off_angle_deg=ang, scf=scf, sn_class=sn_class,
+            sn_environment=sn_env, design_fatigue_factor=dff,
+            design_service_life_years=design_life,
+            mean_stress_model=ms_model, as_welded=as_welded,
             contents_density=ref.contents_density, coating_thickness=ref.coating_thickness,
             coating_density=ref.coating_density, is_reference_preset=False,
         ),
@@ -865,6 +989,21 @@ st.markdown(kpi_row([
     kpi("Env. capacity factor", f'{env["factor"]:.3f}' if env["enabled"] else "-", "", "amber"),
 ]), unsafe_allow_html=True)
 
+# --- Fatigue acceptance (DFF) + S-N environment (DNV-OS-F201 / RP-C203) ---
+_acc = dmg.get("acceptance")
+if _acc is not None:
+    _env_label = {"in_air": "in air", "seawater_cp": "seawater w/ CP"}.get(
+        dmg.get("sn_environment", "in_air"), dmg.get("sn_environment", "in_air"))
+    _pass = _acc["passes"]
+    st.markdown(kpi_row([
+        kpi("S-N environment", _env_label),
+        kpi("Design Fatigue Factor", f'{_acc["dff"]:.0f}', "x"),
+        kpi("Allowable life (life/DFF)", life(_acc["allowable_life_years"]), "yr"),
+        kpi("DFF utilisation", f'{_acc["utilisation"]:.2f}', "",
+            "sig" if _pass else "alarm"),
+        kpi("Acceptance", "PASS" if _pass else "FAIL", "", "sig" if _pass else "alarm"),
+    ]), unsafe_allow_html=True)
+
 st.markdown('<div class="sec">Sea state &middot; spectral analysis &middot; hang-off motion</div>', unsafe_allow_html=True)
 st.markdown(kpi_row([
     kpi("Sig. heave Hm0", f'{sea["hs"]:.2f}', "m"),
@@ -896,6 +1035,24 @@ if len(_dof) > 1:
         ]), unsafe_allow_html=True)
         st.caption("Resolved via z_ho = heave - x_p*pitch + y_p*roll (small-angle Eq. 6). "
                    "Shares are of the vertical hang-off motion variance.")
+
+_cat = payload.get("catenary")
+if _cat is not None:
+    st.markdown('<div class="sec">Static catenary configuration &middot; riser shape &amp; touchdown</div>',
+                unsafe_allow_html=True)
+    gc1, gc2 = dcols([3, 2])
+    gc1.plotly_chart(catenary_fig(_cat), width="stretch", config={"displayModeBar": False})
+    with gc2:
+        st.markdown(kpi_row([
+            kpi("Catenary parameter a", f'{_cat["catenary_parameter"]:.0f}', "m"),
+            kpi("Horizontal span", f'{_cat["horizontal_span"]:.0f}', "m"),
+        ]), unsafe_allow_html=True)
+        st.markdown(kpi_row([
+            kpi("Arc length", f'{_cat["arc_length"]:.0f}', "m"),
+            kpi("TDP curvature", f'{_cat["tdp_curvature"]*1e3:.3f}', "1/km", "amber"),
+        ]), unsafe_allow_html=True)
+        st.caption("Closed-form catenary y(x)=a(cosh(x/a)-1); kappa_TDP = 1/a = w/H. "
+                   "TDP at the origin, hang-off at the top-right.")
 
 st.markdown('<div class="sec">Layer 1 - transfer function H(f) &middot; MRU motion &rarr; TDP stress</div>',
             unsafe_allow_html=True)
@@ -930,6 +1087,14 @@ st.markdown(kpi_row([
     kpi("Block damage", f'{dmg["block_damage"]:.2e}'),
     kpi("S-N class", cfg.riser.sn_class),
 ]), unsafe_allow_html=True)
+l2a, l2b = dcols([1, 1])
+l2a.plotly_chart(sn_family_fig(cfg.riser.sn_class, cfg.riser.sn_environment),
+                 width="stretch", config={"displayModeBar": False})
+_ver = payload.get("verification")
+if _ver is not None:
+    l2b.plotly_chart(dirlik_verify_fig(_ver), width="stretch", config={"displayModeBar": False})
+    l2b.caption("Verification: the rainflow range histogram against the Dirlik and "
+                "narrow-band (Rayleigh) spectral PDFs on the same moments.")
 
 st.markdown(
     f'<div class="sec">Layer 3 - remaining-life posterior &middot; {post["n_members"]:,} MC members &middot; '
@@ -937,6 +1102,21 @@ st.markdown(
 pc1, pc2 = dcols([3, 2])
 pc1.plotly_chart(fan_fig(payload["bayesian_fan"], post["p50"]), width="stretch", config={"displayModeBar": False})
 pc2.plotly_chart(pdf_hist_fig(post), width="stretch", config={"displayModeBar": False})
+
+_dfan = payload.get("divergence_fan")
+if _dfan is not None:
+    st.markdown('<div class="sec">Accumulated-damage divergence &middot; design vs actual wave climate '
+                '(spec &sect;5 gate)</div>', unsafe_allow_html=True)
+    vd1, vd2 = dcols([3, 2])
+    vd1.plotly_chart(divergence_fan_fig(_dfan), width="stretch", config={"displayModeBar": False})
+    with vd2:
+        _i15 = _dfan["years"].index(15.0) if 15.0 in _dfan["years"] else -1
+        st.markdown(kpi_row([
+            kpi("P10 @ yr 15", f'{100*_dfan["p10"][_i15]:.1f}', "%"),
+            kpi("P90 @ yr 15", f'{100*_dfan["p90"][_i15]:.1f}', "%", "amber"),
+        ]), unsafe_allow_html=True)
+        st.caption("AR(1) wave-climate Monte Carlo: how far the realised accumulated damage "
+                   "can drift from the design prediction. Spec gate: P10≈5%, P90≈28% at year 15.")
 
 st.markdown('<div class="sec">Decision - risk-based inspection schedule</div>', unsafe_allow_html=True)
 dc1, dc2 = dcols([3, 2])

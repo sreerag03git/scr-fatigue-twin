@@ -12,6 +12,11 @@ from typing import Any
 import numpy as np
 
 from scr_twin_core.bayesian import BayesianRateEstimator
+from scr_twin_core.montecarlo import (
+    UncertaintyModel,
+    simulate_block_rate_observations,
+    simulate_wave_climate_multipliers,
+)
 from scr_twin_core.config import AnalysisConfig
 from scr_twin_core.inspection import (
     ConditionalEconomicsModel,
@@ -59,14 +64,25 @@ def bayesian_life_fan(
 ) -> dict[str, list[float]]:
     """Remaining-life credible-interval fan that contracts with monitoring time.
 
-    The signature visual: a proper Bayesian posterior on the damage rate, updated
-    with monthly stationary-window observations, mapped to remaining life
-    ``(1 - accumulated_damage)/rate``. Year 0 is the Monte Carlo prior; the band
-    narrows as data accrues (90% CI ~ 1/sqrt(T)).
+    A proper Bayesian posterior on the damage rate, updated with **genuine
+    AR(1)-correlated** per-block observations (not a constant), mapped to
+    remaining life ``(1 - accumulated_damage)/rate``. Because the observations are
+    autocorrelated the updater uses the AR(1) effective sample size, so the band
+    contracts at the honest rate: still ~ ``1/sqrt(T)`` (90% CI halves by year 4)
+    but wider in absolute terms than an i.i.d. shrink would give. Year 0 is the
+    Monte Carlo prior.
     """
-    rate_std = max(rate_std, nominal_rate * 1e-3)
+    model = UncertaintyModel()
+    phi = model.wave_climate_ar1
+    # Per-block observation std anchored to the generator's LogNormal CoV so the
+    # data scatter and the assumed obs noise are consistent.
+    log_cov = float(np.sqrt(np.exp(model.wave_climate_logstd**2) - 1.0))
+    block_std = max(nominal_rate * log_cov, nominal_rate * 1e-3, rate_std * 1e-6)
+    obs = simulate_block_rate_observations(
+        nominal_rate, model, years=years, blocks_per_year=blocks_per_year, seed=seed, phi=phi,
+    )
     est = BayesianRateEstimator(
-        prior_mean=nominal_rate, block_obs_std=rate_std, prior_std=rate_std
+        prior_mean=nominal_rate, block_obs_std=block_std, prior_std=block_std, obs_ar1=phi,
     )
     yrs: list[float] = [0.0]
     low: list[float] = []
@@ -84,8 +100,8 @@ def bayesian_life_fan(
     med.append(m)
     high.append(hi)
     for year in range(1, years + 1):
-        for _ in range(blocks_per_year):
-            est.update_block(nominal_rate)
+        for b in range(blocks_per_year):
+            est.update_block(float(obs[(year - 1) * blocks_per_year + b]))
         lo, m, hi = life_ci(est.posterior(), float(year))
         yrs.append(float(year))
         low.append(lo)
@@ -120,6 +136,59 @@ def _transfer_payload(result: FullResult) -> dict[str, Any]:
 def load_transfer(data: bytes | str, **overrides: Any) -> InterpolatedTransferFunction:
     """Parse an imported complex H(f) CSV into a transfer function (raises on bad input)."""
     return load_transfer_csv(data, **overrides)
+
+
+def _catenary_payload(result: FullResult) -> dict[str, Any]:
+    """Static catenary profile (riser shape from TDP at origin to hang-off)."""
+    c = result.catenary_profile
+    return {
+        "x": decimate(np.asarray(c["x"]), 200),
+        "y": decimate(np.asarray(c["y"]), 200),
+        "catenary_parameter": c["catenary_parameter"],
+        "horizontal_span": c["horizontal_span"],
+        "arc_length": c["arc_length"],
+        "water_depth": c["water_depth"],
+        "tdp_curvature": c["tdp_curvature"],
+        "top_angle_deg": c["top_angle_deg"],
+    }
+
+
+def _verification_payload(result: FullResult) -> dict[str, Any]:
+    """Data for the Dirlik/Bendat-vs-rainflow range-distribution verification plot."""
+    h = result.rainflow_hist
+    m = result.spectral_moments
+    stress_to_mpa = float(h.get("stress_to_mpa", 1.0e-6))
+    edges = np.asarray(h["edges"], dtype=np.float64) * stress_to_mpa  # -> MPa
+    return {
+        "hist_edges_mpa": [float(e) for e in edges],
+        "hist_counts": [float(c) for c in np.asarray(h["counts"])],
+        "moments": {str(k): float(v) for k, v in m.items()},
+        "stress_to_mpa": stress_to_mpa,
+        "sigma_mpa": float(np.sqrt(max(m.get(0, 0.0), 0.0)) * stress_to_mpa),
+    }
+
+
+def divergence_fan(
+    parameters: dict[str, float], *, years: int = 20, n_members: int = 15000, seed: int = 0,
+) -> dict[str, list[float]]:
+    """Accumulated-damage divergence fan (actual/design - 1) vs year.
+
+    Uses the run's own uncertainty parameters; a fixed n_members/seed keeps the
+    figure deterministic and consistent with the spec-Sec.5 gate regardless of
+    the user's Monte Carlo slider.
+    """
+    model = UncertaintyModel(**parameters)
+    w = simulate_wave_climate_multipliers(model, years, n_members=n_members, seed=seed)
+    cum = np.cumsum(w, axis=1)
+    design = np.arange(1, years + 1, dtype=np.float64)
+    div = cum / design - 1.0  # (members, years)
+    p10, p50, p90 = np.percentile(div, [10, 50, 90], axis=0)
+    return {
+        "years": [0.0, *[float(y) for y in design]],
+        "p10": [0.0, *[float(v) for v in p10]],
+        "p50": [0.0, *[float(v) for v in p50]],
+        "p90": [0.0, *[float(v) for v in p90]],
+    }
 
 
 def _posterior_payload(result: FullResult) -> dict[str, Any]:
@@ -178,6 +247,9 @@ def analyze(
         },
         "spectrum": _spectrum_payload(result),
         "transfer": _transfer_payload(result),
+        "catenary": _catenary_payload(result),
+        "verification": _verification_payload(result),
+        "divergence_fan": divergence_fan(result.parameters, seed=config.seed),
         "dof_contributions": result.dof_contributions,
         "damage": {
             "annual_rate_time": result.annual_damage_rate_time,
@@ -185,6 +257,8 @@ def analyze(
             "deterministic_life_years": result.deterministic_life_years,
             "block_damage": result.time_domain_block.damage,
             "block_seconds": result.time_domain_block.block_seconds,
+            "sn_environment": str(config.riser.sn_environment.value),
+            "acceptance": result.fatigue_acceptance.as_dict(),
         },
         "environment": {
             "enabled": result.environment is not None,

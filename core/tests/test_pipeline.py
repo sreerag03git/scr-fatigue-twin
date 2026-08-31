@@ -82,3 +82,56 @@ def test_spectral_and_time_domain_agree():
 def test_too_short_motion_raises():
     with pytest.raises(ValueError):
         run_full_analysis(_config(), np.zeros(4), 4.0)
+
+
+def test_figure_data_is_populated():
+    m = _motion()
+    res = run_full_analysis(_config(), m.heave, m.fs)
+    # Catenary profile: TDP at origin, closes at the hang-off depth.
+    cp = res.catenary_profile
+    assert cp["x"][0] == 0.0
+    assert cp["y"][0] == pytest.approx(0.0, abs=1e-6)
+    assert cp["y"][-1] == pytest.approx(cp["water_depth"], rel=1e-3)
+    assert cp["tdp_curvature"] == pytest.approx(1.0 / cp["catenary_parameter"], rel=1e-12)
+    # Spectral moments present and positive.
+    assert set(res.spectral_moments) == {0, 1, 2, 4}
+    assert all(v > 0.0 for v in res.spectral_moments.values())
+    # Rainflow histogram: one bin per interval, non-negative, some cycles counted.
+    hist = res.rainflow_hist
+    assert len(hist["counts"]) == len(hist["edges"]) - 1
+    assert float(np.asarray(hist["counts"]).sum()) > 0.0
+
+
+def _riser_with(**updates):
+    return RiserConfig.reference_scr().model_copy(update=updates)
+
+
+def test_as_welded_suppresses_mean_stress_correction():
+    # Default (as-welded) SCR: even with a Goodman model requested, DNV permits
+    # no mean-stress benefit -> the correction is inert and life is unchanged.
+    from scr_twin_core.sn import MeanStressModel
+    m = _motion()
+    base = _config()
+    welded = base.model_copy(update={
+        "riser": _riser_with(mean_stress_model=MeanStressModel.GOODMAN, as_welded=True)
+    })
+    a = run_full_analysis(base, m.heave, m.fs)
+    b = run_full_analysis(welded, m.heave, m.fs)
+    assert not b.provenance.mean_stress_applied
+    assert b.annual_damage_rate_time == pytest.approx(a.annual_damage_rate_time, rel=1e-12)
+
+
+def test_base_material_static_tension_shortens_life():
+    # Base material (as_welded=False) + Goodman: the static axial tension mean
+    # from the catenary knocks the fatigue life down vs the uncorrected run.
+    from scr_twin_core.sn import MeanStressModel
+    m = _motion()
+    base = _config()
+    corrected = base.model_copy(update={
+        "riser": _riser_with(mean_stress_model=MeanStressModel.GOODMAN, as_welded=False)
+    })
+    a = run_full_analysis(base, m.heave, m.fs)
+    b = run_full_analysis(corrected, m.heave, m.fs)
+    assert b.provenance.mean_stress_applied
+    assert b.provenance.static_mean_stress_pa > 0.0
+    assert b.deterministic_life_years < a.deterministic_life_years

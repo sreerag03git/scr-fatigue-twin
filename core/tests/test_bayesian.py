@@ -69,3 +69,44 @@ def test_update_from_block_damage_equivalent():
 def test_rejects_bad_inputs():
     with pytest.raises(ValueError):
         BayesianRateEstimator(prior_mean=0.02, block_obs_std=0.0)
+    with pytest.raises(ValueError):
+        BayesianRateEstimator(prior_mean=0.02, block_obs_std=0.02, obs_ar1=1.0)
+
+
+# --- AR(1) effective-sample-size correction -------------------------------- #
+def _feed(est: BayesianRateEstimator, obs: np.ndarray) -> BayesianRateEstimator:
+    for y in obs:
+        est.update_block(float(y))
+    return est
+
+
+def test_phi_zero_is_identical_to_iid():
+    rng = np.random.default_rng(0)
+    obs = rng.normal(TRUE_RATE, OBS_STD, 400)
+    a = _feed(BayesianRateEstimator(prior_mean=TRUE_RATE, block_obs_std=OBS_STD), obs).posterior()
+    b = _feed(BayesianRateEstimator(prior_mean=TRUE_RATE, block_obs_std=OBS_STD, obs_ar1=0.0),
+              obs).posterior()
+    assert a.mean == pytest.approx(b.mean, rel=1e-15)
+    assert a.ci90_width == pytest.approx(b.ci90_width, rel=1e-15)
+
+
+def test_ar1_inflates_ci_by_sqrt_vif():
+    # In the data-dominated regime the AR(1) band is wider by sqrt((1+phi)/(1-phi)).
+    rng = np.random.default_rng(1)
+    obs = rng.normal(TRUE_RATE, OBS_STD, 6000)
+    phi = 0.35
+    w0 = _feed(BayesianRateEstimator(prior_mean=TRUE_RATE, block_obs_std=OBS_STD), obs).posterior().ci90_width
+    wp = _feed(BayesianRateEstimator(prior_mean=TRUE_RATE, block_obs_std=OBS_STD, obs_ar1=phi),
+               obs).posterior().ci90_width
+    assert wp / w0 == pytest.approx(np.sqrt((1 + phi) / (1 - phi)), rel=0.02)  # ~1.441
+
+
+def test_ar1_still_halves_by_year_four():
+    # The AR(1) width factor is constant, so it cancels in the year-4/year-1
+    # ratio: the honesty gate (CI halves by year 4) survives the correction.
+    def width(years: float) -> float:
+        est = BayesianRateEstimator(prior_mean=TRUE_RATE, block_obs_std=OBS_STD, obs_ar1=0.35)
+        rng = np.random.default_rng(0)
+        obs = rng.normal(TRUE_RATE, OBS_STD, int(years * BLOCKS_PER_YEAR))
+        return _feed(est, obs).posterior().ci90_width
+    assert width(4) / width(1) == pytest.approx(0.5, abs=0.04)

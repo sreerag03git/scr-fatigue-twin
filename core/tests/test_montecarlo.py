@@ -11,6 +11,7 @@ from scr_twin_core.montecarlo import (
     UncertaintyModel,
     accumulated_damage_divergence,
     run_monte_carlo,
+    simulate_block_rate_observations,
     simulate_wave_climate_multipliers,
 )
 
@@ -65,6 +66,33 @@ def test_wave_climate_multiplier_properties():
     c1 = xi[:, 1:].ravel()
     corr = np.corrcoef(c0, c1)[0, 1]
     assert corr == pytest.approx(m.wave_climate_ar1, abs=0.05)
+
+
+def test_block_rate_observations_properties():
+    m = UncertaintyModel()
+    obs = simulate_block_rate_observations(
+        NOMINAL_RATE, m, years=20, blocks_per_year=100, seed=3,
+    )
+    assert obs.shape == (2000,)
+    # deterministic for a fixed seed
+    obs2 = simulate_block_rate_observations(
+        NOMINAL_RATE, m, years=20, blocks_per_year=100, seed=3,
+    )
+    np.testing.assert_array_equal(obs, obs2)
+    # unit-median -> observations centred on the nominal rate (NOT the harsher
+    # divergence-fan median)
+    assert np.median(obs) == pytest.approx(NOMINAL_RATE, rel=0.05)
+    # AR(1) persistence recovered in the log-multipliers
+    xi = np.log(obs / NOMINAL_RATE)
+    corr = np.corrcoef(xi[:-1], xi[1:])[0, 1]
+    assert corr == pytest.approx(m.wave_climate_ar1, abs=0.06)
+
+
+def test_block_rate_observations_rejects_bad_phi():
+    with pytest.raises(ValueError):
+        simulate_block_rate_observations(
+            NOMINAL_RATE, UncertaintyModel(), years=1, blocks_per_year=10, seed=0, phi=1.0,
+        )
 
 
 def test_rejects_bad_inputs():
