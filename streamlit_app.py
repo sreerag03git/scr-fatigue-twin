@@ -221,26 +221,44 @@ def _imported_tf(cfg: AnalysisConfig, transfer_bytes: bytes | None):
         return None, f"Invalid H(f) table - {exc}"
 
 
+def _scatter_diagram(scatter_bytes: bytes | None):
+    """Parse an uploaded wave scatter-diagram CSV, or None to use the illustrative default."""
+    if not scatter_bytes:
+        return None, None
+    try:
+        return service.load_scatter(scatter_bytes), None
+    except ValueError as exc:
+        return None, f"Invalid scatter-diagram CSV - {exc}"
+
+
 @st.cache_data(show_spinner=False)
 def analyze_synthetic(config_json: str, hs: float, tp: float, gamma: float,
                       duration: float, fs: float, seed: int, heading: float,
-                      transfer_bytes: bytes | None = None) -> dict:
+                      transfer_bytes: bytes | None = None,
+                      scatter_bytes: bytes | None = None) -> dict:
     cfg = AnalysisConfig.model_validate_json(config_json)
     tf, err = _imported_tf(cfg, transfer_bytes)
     if err:
         return {"error": err}
+    diagram, serr = _scatter_diagram(scatter_bytes)
+    if serr:
+        return {"error": serr}
     channels, fsr = service.make_synthetic_6dof(hs, tp, gamma, duration, fs, seed, heading)
     return service.analyze(cfg, channels["heave"], fsr, is_synthetic=True,
-                           imported_tf=tf, channels=channels)
+                           imported_tf=tf, channels=channels, scatter_diagram=diagram)
 
 
 @st.cache_data(show_spinner=False)
 def analyze_upload(config_json: str, file_bytes: bytes,
-                   transfer_bytes: bytes | None = None) -> dict:
+                   transfer_bytes: bytes | None = None,
+                   scatter_bytes: bytes | None = None) -> dict:
     cfg = AnalysisConfig.model_validate_json(config_json)
     tf, err = _imported_tf(cfg, transfer_bytes)
     if err:
         return {"error": err}
+    diagram, serr = _scatter_diagram(scatter_bytes)
+    if serr:
+        return {"error": serr}
     rec = ingest_mod.load_mru_csv(io.BytesIO(file_bytes))
     if not rec.health.ok:
         return {"error": "; ".join(rec.health.flags) or "data health check failed",
@@ -249,7 +267,7 @@ def analyze_upload(config_json: str, file_bytes: bytes,
     # collapse to the heave path (dof channels dict has a single entry).
     return service.analyze(cfg, rec.channels["heave"], rec.fs,
                            is_synthetic=False, data_health=rec.health.as_dict(),
-                           imported_tf=tf, channels=dict(rec.channels))
+                           imported_tf=tf, channels=dict(rec.channels), scatter_diagram=diagram)
 
 
 @st.cache_data(show_spinner=False)
@@ -500,6 +518,26 @@ def divergence_fan_fig(dfan: dict) -> go.Figure:
     f.update_layout(
         xaxis=dict(title="year", gridcolor=GRID, zeroline=False),
         yaxis=dict(title="actual/design accumulated damage - 1 [%]", gridcolor=GRID, zeroline=False))
+    return f
+
+
+def scatter_fig(lt: dict) -> go.Figure:
+    """Fatigue-driver heat map over the Hs-Tp scatter diagram (% of long-term damage)."""
+    hs_vals = list(lt["hs_values"])
+    tp_vals = list(lt["tp_values"])
+    hi = {v: i for i, v in enumerate(hs_vals)}
+    ti = {v: i for i, v in enumerate(tp_vals)}
+    z = np.full((len(hs_vals), len(tp_vals)), np.nan)
+    for c in lt["contributions"]:
+        z[hi[c["hs"]], ti[c["tp"]]] = 100.0 * c["damage_fraction"]
+    f = _fig(300)
+    f.add_trace(go.Heatmap(
+        x=tp_vals, y=hs_vals, z=z, colorscale=[[0, "rgba(15,143,156,0.05)"], [1, AMBER]],
+        colorbar=dict(title="% dmg", thickness=10), hoverongaps=False,
+        hovertemplate="Hs %{y} m, Tp %{x} s<br>%{z:.1f}% of damage<extra></extra>"))
+    f.update_layout(
+        xaxis=dict(title="Tp [s]", gridcolor=GRID, zeroline=False, dtick=2),
+        yaxis=dict(title="Hs [m]", gridcolor=GRID, zeroline=False))
     return f
 
 
@@ -794,6 +832,16 @@ with st.sidebar.expander("Transfer function (Layer 1)", expanded=True):
     else:
         st.caption("Reduced-order Morison model - a documented engineering approximation.")
 
+with st.sidebar.expander("Long-term wave climate (scatter)"):
+    scatter_bytes: bytes | None = None
+    sc_up = st.file_uploader("Scatter-diagram CSV", type=["csv"], key="scatter_csv")
+    if sc_up is not None:
+        scatter_bytes = sc_up.getvalue()
+        st.caption("Loaded a project scatter table.")
+    else:
+        st.caption("Using an **illustrative** deep-water climate. Columns `Hs, Tp, prob` "
+                   "(occurrence counts, fractions or %). Drives the long-term D = &Sigma; p&#8202;D fatigue.")
+
 with st.sidebar.expander("Arabian Gulf correction", expanded=True):
     env_on = st.toggle("Apply correction", value=True)
     tfac = st.slider("Temperature factor", 0.72, 0.78, 0.75, 0.005, disabled=not env_on)
@@ -859,9 +907,9 @@ run_clicked = run_col.button("▶  Run analysis", type="primary", width="stretch
 if is_synth:
     payload = analyze_synthetic(cfg.model_dump_json(), synth["hs"], synth["tp"], synth["gamma"],
                                 synth["duration"], synth["fs"], int(synth["seed"]),
-                                synth["heading"], transfer_bytes)
+                                synth["heading"], transfer_bytes, scatter_bytes)
 elif upload_bytes is not None:
-    payload = analyze_upload(cfg.model_dump_json(), upload_bytes, transfer_bytes)
+    payload = analyze_upload(cfg.model_dump_json(), upload_bytes, transfer_bytes, scatter_bytes)
 else:
     st.info("Upload an MRU CSV in the sidebar, or switch to the synthetic demo generator, then press Run analysis.")
     st.stop()
@@ -1095,6 +1143,28 @@ if _ver is not None:
     l2b.plotly_chart(dirlik_verify_fig(_ver), width="stretch", config={"displayModeBar": False})
     l2b.caption("Verification: the rainflow range histogram against the Dirlik and "
                 "narrow-band (Rayleigh) spectral PDFs on the same moments.")
+
+_lt = payload.get("long_term")
+if _lt is not None:
+    st.markdown('<div class="sec">Long-term fatigue &middot; wave scatter-diagram summation '
+                '(DNV-RP-C203 &sect;5) &middot; D = &Sigma; p&#8202;D</div>', unsafe_allow_html=True)
+    lt1, lt2 = dcols([3, 2])
+    lt1.plotly_chart(scatter_fig(_lt), width="stretch", config={"displayModeBar": False})
+    with lt2:
+        _top = _lt["contributions"][0] if _lt["contributions"] else None
+        st.markdown(kpi_row([
+            kpi("Long-term life", life(_lt["life_years"]), "yr", "sig"),
+            kpi("Sea-state cells", f'{_lt["n_cells"]}'),
+        ]), unsafe_allow_html=True)
+        if _top is not None:
+            st.markdown(kpi_row([
+                kpi("Top driver cell", f'Hs {_top["hs"]:.1f} / Tp {_top["tp"]:.0f}', "m/s", "amber"),
+                kpi("its damage share", f'{100*_top["damage_fraction"]:.0f}', "%", "amber"),
+            ]), unsafe_allow_html=True)
+        st.caption(f"Damage summed over {_lt['n_cells']} sea states weighted by occurrence "
+                   f"({_lt['source']}). Real SCR fatigue is dominated by rare storms, not the "
+                   "mean sea state - the heat map shows which cells drive it. Upload a project "
+                   "scatter table in the sidebar.")
 
 st.markdown(
     f'<div class="sec">Layer 3 - remaining-life posterior &middot; {post["n_members"]:,} MC members &middot; '

@@ -24,7 +24,8 @@ from scr_twin_core.inspection import (
     next_inspection,
 )
 from scr_twin_core.miner import SECONDS_PER_YEAR
-from scr_twin_core.pipeline import FullResult, run_full_analysis
+from scr_twin_core.pipeline import FullResult, long_term_fatigue, run_full_analysis
+from scr_twin_core.scatter import ScatterDiagram, example_scatter_diagram, load_scatter_csv
 from scr_twin_core.synthetic import synthetic_mru_6dof, synthetic_mru_motion
 from scr_twin_core.transfer import InterpolatedTransferFunction, load_transfer_csv
 
@@ -191,6 +192,29 @@ def divergence_fan(
     }
 
 
+def _long_term_payload(
+    config: AnalysisConfig,
+    diagram: ScatterDiagram,
+    imported_tf: InterpolatedTransferFunction | None,
+) -> dict[str, Any]:
+    """Long-term scatter-diagram fatigue (DNV-RP-C203 Sec. 5) + driver heat map."""
+    lt = long_term_fatigue(config, diagram, imported_tf=imported_tf)
+    return {
+        "source": diagram.source,
+        "annual_damage_rate": lt.annual_damage_rate,
+        "life_years": lt.life_years,
+        "n_cells": lt.n_cells,
+        "hs_values": diagram.hs_values(),
+        "tp_values": diagram.tp_values(),
+        "contributions": lt.as_dict()["contributions"],
+    }
+
+
+def load_scatter(data: bytes | str) -> ScatterDiagram:
+    """Parse an uploaded scatter-diagram CSV (raises loudly on bad input)."""
+    return load_scatter_csv(data)
+
+
 def _posterior_payload(result: FullResult) -> dict[str, Any]:
     mc = result.monte_carlo
     counts, edges = mc.histogram(48)
@@ -213,17 +237,20 @@ def analyze(
     data_health: dict[str, Any] | None = None,
     imported_tf: InterpolatedTransferFunction | None = None,
     channels: dict[str, np.ndarray] | None = None,
+    scatter_diagram: ScatterDiagram | None = None,
 ) -> dict[str, Any]:
     """Run the full chain and assemble the complete dashboard payload.
 
     When ``channels`` (6-DOF) is supplied the hang-off motion is resolved via
-    Eq. 6; otherwise ``heave`` alone drives the chain.
+    Eq. 6; otherwise ``heave`` alone drives the chain. ``scatter_diagram`` (or the
+    illustrative default) drives the long-term (DNV-RP-C203 Sec. 5) fatigue block.
     """
     result = run_full_analysis(
         config, heave, fs, motion_is_synthetic=is_synthetic,
         imported_tf=imported_tf, motion_channels=channels,
     )
     mc = result.monte_carlo
+    diagram = scatter_diagram if scatter_diagram is not None else example_scatter_diagram()
 
     plan = next_inspection(mc.life_years, target_pof=1e-2, horizon_year=float(max(60.0, mc.p90)))
     horizon = max(plan.next_inspection_year * 1.5, mc.p50, 30.0)
@@ -250,6 +277,7 @@ def analyze(
         "catenary": _catenary_payload(result),
         "verification": _verification_payload(result),
         "divergence_fan": divergence_fan(result.parameters, seed=config.seed),
+        "long_term": _long_term_payload(config, diagram, imported_tf),
         "dof_contributions": result.dof_contributions,
         "damage": {
             "annual_rate_time": result.annual_damage_rate_time,

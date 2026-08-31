@@ -13,6 +13,7 @@ Chain: Welch PSD / JONSWAP fit (sea state) -> catenary + Route-1 H(f)
 from __future__ import annotations
 
 import hashlib
+from collections.abc import Callable
 from dataclasses import dataclass, field
 
 import numpy as np
@@ -27,14 +28,16 @@ from .hang_off_kinematics import resolve_hang_off
 from .miner import SECONDS_PER_YEAR, DamageResult, FatigueAcceptance, block_damage, dff_acceptance
 from .montecarlo import MonteCarloResult, UncertaintyModel, run_monte_carlo
 from .rainflow import count_cycles, range_histogram
+from .scatter import LongTermFatigue, ScatterDiagram, aggregate_long_term
 from .sn import MeanStressModel, SNCurve, get_curve
-from .spectral import SeaState, fit_jonswap, spectral_moments, welch_psd
+from .spectral import SeaState, fit_jonswap, jonswap, spectral_moments, welch_psd
 from .spectral_damage import dirlik_damage_rate_curve
 from .stress import (
     rfft_frequencies,
     stress_history_from_motion,
     stress_psd_from_motion_psd,
 )
+from .synthetic import default_heave_rao
 from .transfer import (
     InterpolatedTransferFunction,
     TransferFunction,
@@ -348,4 +351,82 @@ def run_full_analysis(
         environment=correction,
         provenance=provenance,
         parameters=model.describe(),
+    )
+
+
+# --------------------------------------------------------------------------- #
+# Long-term scatter-diagram fatigue (DNV-RP-C203 Sec. 5)
+# --------------------------------------------------------------------------- #
+def sea_state_annual_damage_rate(
+    config: AnalysisConfig,
+    hs: float,
+    tp: float,
+    *,
+    gamma: float = 3.3,
+    imported_tf: InterpolatedTransferFunction | None = None,
+    rao: Callable[[NDArray[np.float64]], NDArray[np.float64]] = default_heave_rao,
+    n_freq: int = 800,
+) -> float:
+    """Annual TDP fatigue damage rate for continuous exposure to one sea state.
+
+    Wave-elevation JONSWAP(Hs, Tp) -> heave-motion PSD via the vessel RAO ->
+    TDP stress PSD via H(f) -> Dirlik damage rate against the DNV S-N curve. This
+    is the per-cell kernel of the long-term scatter summation. The heave RAO is
+    ILLUSTRATIVE (:func:`default_heave_rao`) unless a measured RAO is supplied.
+    """
+    riser = config.riser
+    section = riser.pipe_section()
+    catenary = riser.catenary()
+    correction = config.environment.correction()
+    curve, _ = _corrected_curve(get_curve(riser.sn_class, riser.sn_environment), correction)
+    tcfg = config.transfer
+
+    f = np.linspace(0.01, 0.6, n_freq)
+    if tcfg.route == "imported":
+        if imported_tf is None:
+            raise ValueError("scatter with the imported route requires a validated H(f) table")
+        tf = imported_tf.evaluate(f)
+    elif tcfg.route == "analytic":
+        tf = analytic_transfer_function(
+            f, catenary, section,
+            natural_frequency=tcfg.natural_frequency,
+            sigma_velocity=tcfg.sigma_velocity,
+            drag_coefficient=tcfg.drag_coefficient,
+            added_mass_coefficient=tcfg.added_mass_coefficient,
+            structural_damping_ratio=tcfg.structural_damping_ratio,
+            contents_density=riser.contents_density,
+        )
+    else:
+        tf = reference_transfer_function(f)
+
+    s_wave = jonswap(f, hs, tp, gamma=gamma, normalize=True)
+    motion_psd = np.asarray(rao(f), dtype=np.float64) ** 2 * s_wave
+    stress_psd = stress_psd_from_motion_psd(motion_psd, tf, section, scf=riser.scf)
+    moments = spectral_moments(f, stress_psd, (0, 1, 2, 4))
+    if not (moments[0] > 0.0 and moments[2] > 0.0 and moments[4] > 0.0):
+        return 0.0
+    rate_per_s = dirlik_damage_rate_curve(
+        moments, curve, stress_to_mpa=1e-6, thickness_m=riser.thickness_for_correction
+    )
+    return float(rate_per_s * SECONDS_PER_YEAR)
+
+
+def long_term_fatigue(
+    config: AnalysisConfig,
+    diagram: ScatterDiagram,
+    *,
+    gamma: float = 3.3,
+    imported_tf: InterpolatedTransferFunction | None = None,
+) -> LongTermFatigue:
+    """Scatter-summed long-term fatigue ``D_annual = sum_ij p_ij D_rate(Hs_i, Tp_j)``.
+
+    Loops the single-sea-state Dirlik chain over every scatter cell and
+    probability-weights the result (DNV-RP-C203 Sec. 5). The per-cell
+    contributions expose which sea states drive the fatigue.
+    """
+    return aggregate_long_term(
+        diagram,
+        lambda hs, tp: sea_state_annual_damage_rate(
+            config, hs, tp, gamma=gamma, imported_tf=imported_tf
+        ),
     )
