@@ -32,6 +32,7 @@ from . import (
     montecarlo,
     pipeline,
     rainflow,
+    scatter,
     section,
     sn,
     spectral,
@@ -40,6 +41,7 @@ from . import (
     synthetic,
     transfer,
     validation,
+    viv,
 )
 
 __all__ = [
@@ -55,6 +57,7 @@ __all__ = [
     "montecarlo",
     "pipeline",
     "rainflow",
+    "scatter",
     "section",
     "sn",
     "spectral",
@@ -63,5 +66,6 @@ __all__ = [
     "synthetic",
     "transfer",
     "validation",
+    "viv",
     "__version__",
 ]

@@ -214,6 +214,24 @@ class HangOffConfig(BaseModel):
         )
 
 
+class VivConfig(BaseModel):
+    """Cross-flow VIV screening inputs (DNV-RP-F204). A SCREENING model, not design.
+
+    A sheared current with the given surface velocity drives the reduced-velocity
+    lock-in screen; ``surface_velocity = 0`` disables VIV. Design-grade VIV needs
+    Shear7 / VIVANA.
+    """
+
+    model_config = {"extra": "forbid"}
+
+    surface_current: float = Field(default=0.6, ge=0.0, le=5.0, description="Surface current speed [m/s]")
+    profile_exponent: float = Field(default=1.0 / 7.0, ge=0.0, le=1.0, description="Power-law current shear exponent")
+    strouhal: float = Field(default=0.18, gt=0.05, le=0.3, description="Strouhal number")
+    damping_ratio: float = Field(default=0.02, gt=0.0, le=0.2, description="Structural+hydro damping ratio")
+    added_mass_coefficient: float = Field(default=1.0, ge=0.0, le=3.0)
+    n_modes: int = Field(default=60, ge=4, le=200, description="Cross-flow modes to resolve")
+
+
 class AnalysisConfig(BaseModel):
     """Top-level analysis configuration (deterministic; seed-driven)."""
 
@@ -223,6 +241,7 @@ class AnalysisConfig(BaseModel):
     transfer: TransferConfig = Field(default_factory=TransferConfig)
     environment: EnvironmentConfig = Field(default_factory=EnvironmentConfig)
     hang_off: HangOffConfig = Field(default_factory=HangOffConfig)
+    viv: VivConfig = Field(default_factory=VivConfig)
     block_duration_s: float = Field(default=1800.0, gt=0.0, description="Analysis block length [s]")
     n_monte_carlo: int = Field(default=10_000, ge=1, le=1_000_000)
     seed: int = Field(default=0, ge=0)

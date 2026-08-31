@@ -31,6 +31,7 @@ import matplotlib.pyplot as plt  # noqa: E402
 import numpy as np  # noqa: E402
 import plotly.graph_objects as go  # noqa: E402
 import streamlit as st  # noqa: E402
+import streamlit.components.v1 as components  # noqa: E402
 from fpdf import FPDF  # noqa: E402
 
 from scr_twin_core import ingest as ingest_mod  # noqa: E402
@@ -41,6 +42,7 @@ from scr_twin_core.config import (  # noqa: E402
     HangOffConfig,
     RiserConfig,
     TransferConfig,
+    VivConfig,
 )
 from scr_twin_core.sn import (  # noqa: E402
     DNV_C203_IN_AIR,
@@ -103,6 +105,13 @@ st.markdown(
       .gate .dot { width:8px; height:8px; border-radius:50%; flex:none; }
       .gate .actual { margin-left:auto; font-family:monospace; font-size:11px; color:#56707d; }
       .foot { color:#8496a0; font-size:10.5px; font-family:monospace; letter-spacing:.05em; }
+      table.ledger { width:100%; border-collapse:collapse; font-size:12.5px; }
+      table.ledger th { text-align:left; font-size:10px; letter-spacing:.1em; text-transform:uppercase;
+                        color:#7a8c96; border-bottom:1.5px solid #cfd8dc; padding:7px 10px; }
+      table.ledger td { padding:7px 10px; border-bottom:1px solid #eceef0; color:#2c3e46; }
+      table.ledger td.lv { font-family:'JetBrains Mono',monospace; color:#0b7079; }
+      table.ledger td.lb { color:#8496a0; font-size:11px; }
+      table.ledger tr:hover td { background:#f5f9fa; }
       /* landing */
       .land { max-width:860px; margin:2vh auto 0; text-align:center; }
       .land h1 { font-size:44px; letter-spacing:.18em; margin:14px 0 2px; }
@@ -221,26 +230,44 @@ def _imported_tf(cfg: AnalysisConfig, transfer_bytes: bytes | None):
         return None, f"Invalid H(f) table - {exc}"
 
 
+def _scatter_diagram(scatter_bytes: bytes | None):
+    """Parse an uploaded wave scatter-diagram CSV, or None to use the illustrative default."""
+    if not scatter_bytes:
+        return None, None
+    try:
+        return service.load_scatter(scatter_bytes), None
+    except ValueError as exc:
+        return None, f"Invalid scatter-diagram CSV - {exc}"
+
+
 @st.cache_data(show_spinner=False)
 def analyze_synthetic(config_json: str, hs: float, tp: float, gamma: float,
                       duration: float, fs: float, seed: int, heading: float,
-                      transfer_bytes: bytes | None = None) -> dict:
+                      transfer_bytes: bytes | None = None,
+                      scatter_bytes: bytes | None = None) -> dict:
     cfg = AnalysisConfig.model_validate_json(config_json)
     tf, err = _imported_tf(cfg, transfer_bytes)
     if err:
         return {"error": err}
+    diagram, serr = _scatter_diagram(scatter_bytes)
+    if serr:
+        return {"error": serr}
     channels, fsr = service.make_synthetic_6dof(hs, tp, gamma, duration, fs, seed, heading)
     return service.analyze(cfg, channels["heave"], fsr, is_synthetic=True,
-                           imported_tf=tf, channels=channels)
+                           imported_tf=tf, channels=channels, scatter_diagram=diagram)
 
 
 @st.cache_data(show_spinner=False)
 def analyze_upload(config_json: str, file_bytes: bytes,
-                   transfer_bytes: bytes | None = None) -> dict:
+                   transfer_bytes: bytes | None = None,
+                   scatter_bytes: bytes | None = None) -> dict:
     cfg = AnalysisConfig.model_validate_json(config_json)
     tf, err = _imported_tf(cfg, transfer_bytes)
     if err:
         return {"error": err}
+    diagram, serr = _scatter_diagram(scatter_bytes)
+    if serr:
+        return {"error": serr}
     rec = ingest_mod.load_mru_csv(io.BytesIO(file_bytes))
     if not rec.health.ok:
         return {"error": "; ".join(rec.health.flags) or "data health check failed",
@@ -249,7 +276,7 @@ def analyze_upload(config_json: str, file_bytes: bytes,
     # collapse to the heave path (dof channels dict has a single entry).
     return service.analyze(cfg, rec.channels["heave"], rec.fs,
                            is_synthetic=False, data_health=rec.health.as_dict(),
-                           imported_tf=tf, channels=dict(rec.channels))
+                           imported_tf=tf, channels=dict(rec.channels), scatter_diagram=diagram)
 
 
 @st.cache_data(show_spinner=False)
@@ -500,6 +527,264 @@ def divergence_fan_fig(dfan: dict) -> go.Figure:
     f.update_layout(
         xaxis=dict(title="year", gridcolor=GRID, zeroline=False),
         yaxis=dict(title="actual/design accumulated damage - 1 [%]", gridcolor=GRID, zeroline=False))
+    return f
+
+
+def _svg_arrow(x1, y1, x2, y2, color, width=1.0, both=False):
+    """A dimension line with slim filled arrowheads (start optional)."""
+    start = ' marker-start="url(#dimstart)"' if both else ""
+    return (f'<line x1="{x1:.1f}" y1="{y1:.1f}" x2="{x2:.1f}" y2="{y2:.1f}" '
+            f'stroke="{color}" stroke-width="{width}" marker-end="url(#dimend)"{start}/>')
+
+
+def system_schematic_svg(payload: dict) -> str:
+    """Technical side-elevation of the SCR system as a hand-built engineering SVG.
+
+    Geometry (catenary, water depth, layback, hang-off angle) is the actual solved
+    result; the drawing adds dimension lines, a hatched seabed, a sheared current
+    profile, an FPSO line-art hull, and leader-line callouts. Rendered to scale.
+    """
+    cat = payload["catenary"]
+    xs = [float(v) for v in cat["x"]]
+    ys = [float(v) for v in cat["y"]]
+    depth = float(cat["water_depth"])
+    span = float(cat["horizontal_span"])
+    a_cat = float(cat["catenary_parameter"])
+    arc = float(cat["arc_length"])
+    hang_from_vert = 90.0 - float(cat["top_angle_deg"])
+    kappa_km = float(cat["tdp_curvature"]) * 1000.0
+
+    INK, DIM, TEAL, TEAL2 = "#2c3e46", "#8194a0", "#0b7079", "#0f8f9c"
+    AMBER, SAND, WATER = "#b4791a", "#a98b5e", "#eaf3f5"
+    FONT = "font-family='JetBrains Mono, Consolas, monospace'"
+
+    VBW, VBH = 1080, 700
+    ml, mr, mt, mb = 140, 210, 58, 112
+    aw, ah = VBW - ml - mr, VBH - mt - mb
+    scale = min(aw / span, ah / depth)
+    dw, dh = span * scale, depth * scale
+    ox = ml + (aw - dw) / 2.0
+    oy = mt + (ah - dh) / 2.0
+
+    def SX(xp: float) -> float:
+        return ox + xp * scale
+
+    def SY(yp: float) -> float:
+        return oy + dh - yp * scale
+
+    surf_y, bed_y = SY(depth), SY(0.0)
+    left_edge, right_edge = SX(0.0) - 0.16 * dw, SX(span) + 0.09 * dw
+    tdp = (SX(0.0), SY(0.0))
+    hang = (SX(span), SY(depth))
+    riser = " ".join(f"{SX(x):.1f},{SY(y):.1f}" for x, y in zip(xs, ys))
+
+    p = []
+    p.append(
+        f'<svg viewBox="0 0 {VBW} {VBH}" width="100%" xmlns="http://www.w3.org/2000/svg" '
+        f'preserveAspectRatio="xMidYMid meet" {FONT} font-size="13">'
+    )
+    p.append(
+        '<defs>'
+        '<marker id="dimend" markerWidth="10" markerHeight="10" refX="8.5" refY="4" orient="auto">'
+        f'<path d="M0,0.5 L9,4 L0,7.5 L2.6,4 Z" fill="{DIM}"/></marker>'
+        '<marker id="dimstart" markerWidth="10" markerHeight="10" refX="0.5" refY="4" orient="auto">'
+        f'<path d="M9,0.5 L0,4 L9,7.5 L6.4,4 Z" fill="{DIM}"/></marker>'
+        '<marker id="cur" markerWidth="9" markerHeight="9" refX="7" refY="3" orient="auto">'
+        f'<path d="M0,0 L7,3 L0,6 Z" fill="{TEAL2}"/></marker>'
+        '<pattern id="seabed" width="9" height="9" patternUnits="userSpaceOnUse" patternTransform="rotate(45)">'
+        f'<line x1="0" y1="0" x2="0" y2="9" stroke="{SAND}" stroke-width="1.1"/></pattern>'
+        '</defs>'
+    )
+    p.append(f'<rect x="0" y="0" width="{VBW}" height="{VBH}" fill="#ffffff"/>')
+
+    # Water column + hatched seabed + mud line + mean water level.
+    p.append(f'<rect x="{left_edge:.1f}" y="{surf_y:.1f}" width="{right_edge - left_edge:.1f}" '
+             f'height="{bed_y - surf_y:.1f}" fill="{WATER}"/>')
+    p.append(f'<rect x="{left_edge:.1f}" y="{bed_y:.1f}" width="{right_edge - left_edge:.1f}" '
+             f'height="{0.07 * dh:.1f}" fill="url(#seabed)"/>')
+    p.append(f'<line x1="{left_edge:.1f}" y1="{bed_y:.1f}" x2="{right_edge:.1f}" y2="{bed_y:.1f}" '
+             f'stroke="{SAND}" stroke-width="1.8"/>')
+    # Mean-water-level line with small wave ticks.
+    p.append(f'<line x1="{left_edge:.1f}" y1="{surf_y:.1f}" x2="{right_edge:.1f}" y2="{surf_y:.1f}" '
+             f'stroke="{TEAL2}" stroke-width="1.3"/>')
+    wl = ""
+    xx = left_edge
+    while xx < right_edge - 14:
+        wl += f'M{xx:.1f},{surf_y:.1f} q7,-5 14,0 '
+        xx += 14
+    p.append(f'<path d="{wl}" fill="none" stroke="{TEAL2}" stroke-width="0.8" opacity="0.5"/>')
+    p.append(f'<text x="{right_edge - 4:.1f}" y="{surf_y - 6:.1f}" text-anchor="end" '
+             f'fill="{TEAL2}" font-size="11">mean water level</text>')
+    p.append(f'<text x="{right_edge - 4:.1f}" y="{bed_y + 0.055 * dh:.1f}" text-anchor="end" '
+             f'fill="{SAND}" font-size="11">seabed</text>')
+
+    # Sheared current profile (left water column): wedge + arrows.
+    viv = payload.get("viv")
+    if viv and viv.get("enabled"):
+        cp = viv["current_profile"]
+        hh = [float(v) for v in cp["height"]]
+        ss = [float(v) for v in cp["speed"]]
+        umax = max(max(ss), 1e-6)
+        u0 = float(viv.get("current_surface_velocity", 0.0))
+        cur_x = left_edge + 6
+        length = 0.13 * dw
+        wedge = [f'{cur_x + (s / umax) * length:.1f},{SY(h):.1f}' for h, s in zip(hh, ss)]
+        wedge = [f'{cur_x:.1f},{surf_y:.1f}'] + wedge + [f'{cur_x:.1f},{bed_y:.1f}']
+        p.append(f'<polygon points="{" ".join(wedge)}" fill="rgba(15,143,156,0.10)" '
+                 f'stroke="{TEAL2}" stroke-width="0.8" stroke-dasharray="3 3"/>')
+        for i in range(1, len(hh) - 1, 4):
+            s = ss[i]
+            if s > 0.03 * umax:
+                p.append(f'<line x1="{cur_x:.1f}" y1="{SY(hh[i]):.1f}" '
+                         f'x2="{cur_x + (s / umax) * length:.1f}" y2="{SY(hh[i]):.1f}" '
+                         f'stroke="{TEAL2}" stroke-width="1.4" marker-end="url(#cur)"/>')
+        p.append(f'<text x="{cur_x:.1f}" y="{surf_y - 22:.1f}" fill="{TEAL2}" font-size="11">'
+                 f'current U(z)</text>')
+        p.append(f'<text x="{cur_x:.1f}" y="{surf_y - 9:.1f}" fill="{TEAL2}" font-size="10">'
+                 f'{u0:.2f} m/s surface</text>')
+
+    # The SCR catenary (real geometry) with TDP hot-spot marker.
+    p.append(f'<polyline points="{riser}" fill="none" stroke="{TEAL}" stroke-width="3.2" '
+             'stroke-linecap="round" stroke-linejoin="round"/>')
+    p.append(f'<circle cx="{tdp[0]:.1f}" cy="{tdp[1]:.1f}" r="5" fill="none" stroke="{AMBER}" stroke-width="1.6"/>')
+    p.append(f'<circle cx="{tdp[0]:.1f}" cy="{tdp[1]:.1f}" r="2.3" fill="{AMBER}"/>')
+
+    # FPSO line-art hull at the hang-off.
+    cx = hang[0]
+    lpx, dr, fb = 0.135 * dw, 0.05 * dh, 0.03 * dh
+    hull = (f'M{cx - lpx:.1f},{surf_y - fb:.1f} L{cx + lpx * 0.98:.1f},{surf_y - fb:.1f} '
+            f'L{cx + lpx:.1f},{surf_y - fb * 0.2:.1f} L{cx + lpx * 0.95:.1f},{surf_y + dr * 0.55:.1f} '
+            f'L{cx + lpx * 0.68:.1f},{surf_y + dr:.1f} L{cx - lpx * 0.68:.1f},{surf_y + dr:.1f} '
+            f'L{cx - lpx * 0.95:.1f},{surf_y + dr * 0.55:.1f} L{cx - lpx:.1f},{surf_y - fb * 0.2:.1f} Z')
+    p.append(f'<path d="{hull}" fill="#f4f7f8" stroke="{INK}" stroke-width="1.7" stroke-linejoin="round"/>')
+    # Deckhouse + a couple of deck details.
+    p.append(f'<rect x="{cx - lpx * 0.62:.1f}" y="{surf_y - fb - 0.055 * dh:.1f}" '
+             f'width="{lpx * 0.34:.1f}" height="{0.055 * dh:.1f}" fill="#e7edef" stroke="{INK}" stroke-width="1.3"/>')
+    p.append(f'<line x1="{cx + lpx * 0.15:.1f}" y1="{surf_y - fb:.1f}" x2="{cx + lpx * 0.15:.1f}" '
+             f'y2="{surf_y - fb - 0.05 * dh:.1f}" stroke="{INK}" stroke-width="1.2"/>')
+    # Riser porch / turret bracket where the SCR meets the hull.
+    p.append(f'<path d="M{cx - 8:.1f},{surf_y + dr * 0.3:.1f} L{cx + 8:.1f},{surf_y + dr * 0.3:.1f} '
+             f'L{cx:.1f},{surf_y + dr:.1f} Z" fill="{INK}"/>')
+    p.append(f'<text x="{cx:.1f}" y="{surf_y - fb - 0.055 * dh - 7:.1f}" text-anchor="middle" '
+             f'fill="{INK}" font-size="11">FPSO</text>')
+
+    # Hang-off angle arc (between the local vertical and the riser tangent).
+    import math as _m
+    px2, py2 = SX(xs[-2]), SY(ys[-2])
+    tang = _m.atan2(py2 - hang[1], px2 - hang[0])  # screen-space direction into the water
+    vert = _m.pi / 2.0  # straight down in screen space
+    r_arc = 0.16 * dh
+    ax0, ay0 = hang[0] + r_arc * _m.cos(vert), hang[1] + r_arc * _m.sin(vert)
+    ax1, ay1 = hang[0] + r_arc * _m.cos(tang), hang[1] + r_arc * _m.sin(tang)
+    p.append(f'<line x1="{hang[0]:.1f}" y1="{hang[1]:.1f}" x2="{hang[0]:.1f}" y2="{hang[1] + r_arc * 1.5:.1f}" '
+             f'stroke="{DIM}" stroke-width="0.9" stroke-dasharray="4 3"/>')
+    sweep = 1 if tang < vert else 0
+    p.append(f'<path d="M{ax0:.1f},{ay0:.1f} A{r_arc:.1f},{r_arc:.1f} 0 0 {sweep} {ax1:.1f},{ay1:.1f}" '
+             f'fill="none" stroke="{AMBER}" stroke-width="1.4"/>')
+    p.append(f'<text x="{hang[0] - r_arc - 4:.1f}" y="{hang[1] + r_arc * 1.9:.1f}" text-anchor="end" '
+             f'fill="{AMBER}" font-size="11">{hang_from_vert:.0f}&#176; from vertical</text>')
+
+    # Water-depth dimension (left).
+    ddx = max(left_edge - 34, 52)
+    p.append(_svg_arrow(ddx, surf_y, ddx, bed_y, DIM, 1.0, both=True))
+    p.append(f'<line x1="{left_edge:.1f}" y1="{surf_y:.1f}" x2="{ddx - 6:.1f}" y2="{surf_y:.1f}" stroke="{DIM}" stroke-width="0.8"/>')
+    p.append(f'<line x1="{left_edge:.1f}" y1="{bed_y:.1f}" x2="{ddx - 6:.1f}" y2="{bed_y:.1f}" stroke="{DIM}" stroke-width="0.8"/>')
+    p.append(f'<text x="{ddx - 9:.1f}" y="{(surf_y + bed_y) / 2:.1f}" text-anchor="middle" '
+             f'fill="{INK}" font-size="12" transform="rotate(-90 {ddx - 9:.1f} {(surf_y + bed_y) / 2:.1f})">'
+             f'water depth  d = {depth:.0f} m</text>')
+
+    # Horizontal layback (span) dimension (bottom).
+    dsy = bed_y + 0.07 * dh + 40
+    p.append(_svg_arrow(tdp[0], dsy, hang[0], dsy, DIM, 1.0, both=True))
+    p.append(f'<line x1="{tdp[0]:.1f}" y1="{bed_y + 0.07 * dh:.1f}" x2="{tdp[0]:.1f}" y2="{dsy + 6:.1f}" stroke="{DIM}" stroke-width="0.8"/>')
+    p.append(f'<line x1="{hang[0]:.1f}" y1="{surf_y:.1f}" x2="{hang[0]:.1f}" y2="{dsy + 6:.1f}" stroke="{DIM}" stroke-width="0.8" stroke-dasharray="4 3"/>')
+    p.append(f'<text x="{(tdp[0] + hang[0]) / 2:.1f}" y="{dsy - 8:.1f}" text-anchor="middle" '
+             f'fill="{INK}" font-size="12">horizontal layback  X = {span:.0f} m</text>')
+
+    # Leader-line callouts.
+    def leader(x, y, tx, ty, label, color, anchor="start"):
+        return (f'<line x1="{x:.1f}" y1="{y:.1f}" x2="{tx:.1f}" y2="{ty:.1f}" stroke="{color}" stroke-width="0.8"/>'
+                f'<circle cx="{x:.1f}" cy="{y:.1f}" r="2" fill="{color}"/>'
+                f'<text x="{tx + (4 if anchor == "start" else -4):.1f}" y="{ty:.1f}" '
+                f'text-anchor="{anchor}" fill="{color}" font-size="11">{label}</text>')
+
+    p.append(leader(tdp[0], tdp[1], tdp[0] + 0.10 * dw, tdp[1] + 0.055 * dh,
+                    f'touchdown point (TDP), &#954;={kappa_km:.2f}/km', AMBER))
+    # Sag point = lowest riser gradient region (~ mid, take the point of min slope).
+    mid = len(xs) // 3
+    sx_, sy_ = SX(xs[mid]), SY(ys[mid])
+    p.append(leader(sx_, sy_, sx_ - 0.12 * dw, sy_ - 0.02 * dh, 'suspended catenary', TEAL, anchor="end"))
+    p.append(leader(hang[0], hang[1], hang[0] - 0.02 * dw, hang[1] - 0.14 * dh, 'hang-off / porch', INK, anchor="end"))
+
+    # Legend / parameter block (bottom-right).
+    lx, ly = VBW - mr + 6, VBH - mb + 18
+    p.append(f'<rect x="{lx:.1f}" y="{ly:.1f}" width="{mr - 18:.1f}" height="86" rx="4" '
+             f'fill="#f7fafb" stroke="{DIM}" stroke-width="0.8"/>')
+    lines = [
+        ("SCR SIDE ELEVATION", INK, 11),
+        (f"catenary a=H/w : {a_cat:,.0f} m", INK, 11),
+        (f"arc length     : {arc:,.0f} m", INK, 11),
+        (f"hang-off angle : {hang_from_vert:.0f}&#176; from vert.", INK, 11),
+        ("geometry to scale", DIM, 10),
+    ]
+    for i, (t, c, fs) in enumerate(lines):
+        p.append(f'<text x="{lx + 8:.1f}" y="{ly + 16 + i * 15:.1f}" fill="{c}" font-size="{fs}">{t}</text>')
+
+    p.append("</svg>")
+    return "".join(p)
+
+
+def viv_mode_fig(viv: dict) -> go.Figure:
+    """Dominant cross-flow VIV mode shape along the riser arc (the standing wave)."""
+    f = _fig(250)
+    sh = viv["dominant_shape"]
+    arc = np.asarray(sh["arc"], dtype=float)
+    disp = np.asarray(sh["disp"], dtype=float)
+    f.add_scatter(x=arc, y=disp, line=dict(color=SIGNAL2, width=2.2), name="mode")
+    f.add_scatter(x=arc, y=-disp, line=dict(color=SIGNAL2, width=0.8, dash="dot"),
+                  hoverinfo="skip")  # envelope (the mode oscillates +/-)
+    f.add_hline(y=0.0, line=dict(color=TEXT, width=0.6))
+    f.update_layout(
+        xaxis=dict(title="arc length from TDP [m]", gridcolor=GRID, zeroline=False),
+        yaxis=dict(title="cross-flow mode shape [-]", gridcolor=GRID, zeroline=False,
+                   range=[-1.2, 1.2]))
+    return f
+
+
+def viv_vr_fig(viv: dict) -> go.Figure:
+    """Reduced velocity Vr per mode with the cross-flow lock-in band shaded."""
+    f = _fig(250)
+    modes = viv["modes"]
+    n = [m["mode"] for m in modes]
+    vr = [m["reduced_velocity"] for m in modes]
+    colors = [AMBER if m["excited"] else "#c7d2d8" for m in modes]
+    f.add_hrect(y0=3.0, y1=9.0, fillcolor="rgba(180,121,26,0.10)", line_width=0,
+                annotation_text="lock-in", annotation_font_size=9, annotation_font_color=AMBER)
+    f.add_bar(x=n, y=vr, marker_color=colors, name="Vr")
+    f.update_layout(
+        xaxis=dict(title="cross-flow mode number", gridcolor=GRID, zeroline=False),
+        yaxis=dict(title="reduced velocity Vr = U / (fn D)", gridcolor=GRID, zeroline=False,
+                   range=[0, max(12.0, min(30.0, max(vr) if vr else 12.0))]))
+    return f
+
+
+def scatter_fig(lt: dict) -> go.Figure:
+    """Fatigue-driver heat map over the Hs-Tp scatter diagram (% of long-term damage)."""
+    hs_vals = list(lt["hs_values"])
+    tp_vals = list(lt["tp_values"])
+    hi = {v: i for i, v in enumerate(hs_vals)}
+    ti = {v: i for i, v in enumerate(tp_vals)}
+    z = np.full((len(hs_vals), len(tp_vals)), np.nan)
+    for c in lt["contributions"]:
+        z[hi[c["hs"]], ti[c["tp"]]] = 100.0 * c["damage_fraction"]
+    f = _fig(300)
+    f.add_trace(go.Heatmap(
+        x=tp_vals, y=hs_vals, z=z, colorscale=[[0, "rgba(15,143,156,0.05)"], [1, AMBER]],
+        colorbar=dict(title="% dmg", thickness=10), hoverongaps=False,
+        hovertemplate="Hs %{y} m, Tp %{x} s<br>%{z:.1f}% of damage<extra></extra>"))
+    f.update_layout(
+        xaxis=dict(title="Tp [s]", gridcolor=GRID, zeroline=False, dtick=2),
+        yaxis=dict(title="Hs [m]", gridcolor=GRID, zeroline=False))
     return f
 
 
@@ -794,6 +1079,22 @@ with st.sidebar.expander("Transfer function (Layer 1)", expanded=True):
     else:
         st.caption("Reduced-order Morison model - a documented engineering approximation.")
 
+with st.sidebar.expander("Current & VIV (DNV-RP-F204)"):
+    viv_current = st.slider("Surface current [m/s]", 0.0, 3.0, 0.6, 0.1,
+                            help="Sheared current driving cross-flow VIV. 0 disables VIV.")
+    viv_damping = st.slider("Damping ratio", 0.005, 0.10, 0.02, 0.005)
+    st.caption("VIV screening (Griffin A/D + lock-in). **Screening upper bound**, not design-grade.")
+
+with st.sidebar.expander("Long-term wave climate (scatter)"):
+    scatter_bytes: bytes | None = None
+    sc_up = st.file_uploader("Scatter-diagram CSV", type=["csv"], key="scatter_csv")
+    if sc_up is not None:
+        scatter_bytes = sc_up.getvalue()
+        st.caption("Loaded a project scatter table.")
+    else:
+        st.caption("Using an **illustrative** deep-water climate. Columns `Hs, Tp, prob` "
+                   "(occurrence counts, fractions or %). Drives the long-term D = &Sigma; p&#8202;D fatigue.")
+
 with st.sidebar.expander("Arabian Gulf correction", expanded=True):
     env_on = st.toggle("Apply correction", value=True)
     tfac = st.slider("Temperature factor", 0.72, 0.78, 0.75, 0.005, disabled=not env_on)
@@ -818,6 +1119,7 @@ try:
         hang_off=HangOffConfig(porch_x=porch_x, porch_y=porch_y, porch_z=porch_z,
                                riser_azimuth_deg=azimuth, exact_rotation=exact_rot),
         environment=EnvironmentConfig(enabled=env_on, temperature_factor=tfac, salinity_factor=sfac),
+        viv=VivConfig(surface_current=viv_current, damping_ratio=viv_damping),
         n_monte_carlo=int(n_mc), seed=int(seed),
     )
 except Exception as exc:  # noqa: BLE001
@@ -859,9 +1161,9 @@ run_clicked = run_col.button("▶  Run analysis", type="primary", width="stretch
 if is_synth:
     payload = analyze_synthetic(cfg.model_dump_json(), synth["hs"], synth["tp"], synth["gamma"],
                                 synth["duration"], synth["fs"], int(synth["seed"]),
-                                synth["heading"], transfer_bytes)
+                                synth["heading"], transfer_bytes, scatter_bytes)
 elif upload_bytes is not None:
-    payload = analyze_upload(cfg.model_dump_json(), upload_bytes, transfer_bytes)
+    payload = analyze_upload(cfg.model_dump_json(), upload_bytes, transfer_bytes, scatter_bytes)
 else:
     st.info("Upload an MRU CSV in the sidebar, or switch to the synthetic demo generator, then press Run analysis.")
     st.stop()
@@ -980,216 +1282,310 @@ dmg, post, insp, econ, prov = (
 )
 sea, env = payload["sea_state"], payload["environment"]
 
-st.markdown(kpi_row([
-    kpi("Deterministic life", life(dmg["deterministic_life_years"]), "yr", "sig"),
-    kpi("P10 (conservative)", life(post["p10"]), "yr", "amber"),
-    kpi("P50 median", life(post["p50"]), "yr"),
-    kpi("P90", life(post["p90"]), "yr"),
-    kpi("Next inspection", f'{insp["next_inspection_year"]:.1f}', "yr", "sig"),
-    kpi("Env. capacity factor", f'{env["factor"]:.3f}' if env["enabled"] else "-", "", "amber"),
-]), unsafe_allow_html=True)
-
-# --- Fatigue acceptance (DFF) + S-N environment (DNV-OS-F201 / RP-C203) ---
 _acc = dmg.get("acceptance")
-if _acc is not None:
-    _env_label = {"in_air": "in air", "seawater_cp": "seawater w/ CP"}.get(
-        dmg.get("sn_environment", "in_air"), dmg.get("sn_environment", "in_air"))
-    _pass = _acc["passes"]
-    st.markdown(kpi_row([
-        kpi("S-N environment", _env_label),
-        kpi("Design Fatigue Factor", f'{_acc["dff"]:.0f}', "x"),
-        kpi("Allowable life (life/DFF)", life(_acc["allowable_life_years"]), "yr"),
-        kpi("DFF utilisation", f'{_acc["utilisation"]:.2f}', "",
-            "sig" if _pass else "alarm"),
-        kpi("Acceptance", "PASS" if _pass else "FAIL", "", "sig" if _pass else "alarm"),
-    ]), unsafe_allow_html=True)
-
-st.markdown('<div class="sec">Sea state &middot; spectral analysis &middot; hang-off motion</div>', unsafe_allow_html=True)
-st.markdown(kpi_row([
-    kpi("Sig. heave Hm0", f'{sea["hs"]:.2f}', "m"),
-    kpi("Tp", f'{sea["tp"]:.1f}', "s"),
-    kpi("Tz", f'{sea["tz"]:.1f}', "s"),
-    kpi("gamma fit", f'{sea["gamma"]:.1f}'),
-]), unsafe_allow_html=True)
-sc1, sc2 = dcols([3, 2])
-sc1.plotly_chart(spectra_fig(payload["spectrum"]), width="stretch", config={"displayModeBar": False})
-tf = _fig(180)
-tf.add_scatter(x=payload["trace"]["time"], y=payload["trace"]["heave"], line=dict(color=SIGNAL, width=1))
-tf.update_layout(xaxis=dict(title="t [s]", gridcolor=GRID, zeroline=False),
-                 yaxis=dict(title="heave [m]", gridcolor=GRID, zeroline=False))
-sc2.plotly_chart(tf, width="stretch", config={"displayModeBar": False})
-
-# --- Layer 1: transfer function H(f) (Fig 4) + validated/illustrative badge ---
-# --- Layer 0: 6-DOF hang-off resolution (Eq. 6) - which DOF drives the fatigue ---
-_dof = payload.get("dof_contributions", {"heave": 1.0})
-if len(_dof) > 1:
-    st.markdown('<div class="sec">Layer 0 - 6-DOF hang-off resolution (Eq. 6) &middot; '
-                'which DOF drives TDP fatigue</div>', unsafe_allow_html=True)
-    kc1, kc2 = dcols([3, 2])
-    kc1.plotly_chart(dof_fig(_dof), width="stretch", config={"displayModeBar": False})
-    with kc2:
-        _top = max(_dof.items(), key=lambda kv: kv[1])
-        st.markdown(kpi_row([
-            kpi("Porch offset x", f'{cfg.hang_off.porch_x:.0f}', "m"),
-            kpi("Dominant DOF", _top[0].upper(), f'{100*_top[1]:.0f}%', "amber"),
-        ]), unsafe_allow_html=True)
-        st.caption("Resolved via z_ho = heave - x_p*pitch + y_p*roll (small-angle Eq. 6). "
-                   "Shares are of the vertical hang-off motion variance.")
-
 _cat = payload.get("catenary")
-if _cat is not None:
-    st.markdown('<div class="sec">Static catenary configuration &middot; riser shape &amp; touchdown</div>',
-                unsafe_allow_html=True)
-    gc1, gc2 = dcols([3, 2])
-    gc1.plotly_chart(catenary_fig(_cat), width="stretch", config={"displayModeBar": False})
-    with gc2:
-        st.markdown(kpi_row([
-            kpi("Catenary parameter a", f'{_cat["catenary_parameter"]:.0f}', "m"),
-            kpi("Horizontal span", f'{_cat["horizontal_span"]:.0f}', "m"),
-        ]), unsafe_allow_html=True)
-        st.markdown(kpi_row([
-            kpi("Arc length", f'{_cat["arc_length"]:.0f}', "m"),
-            kpi("TDP curvature", f'{_cat["tdp_curvature"]*1e3:.3f}', "1/km", "amber"),
-        ]), unsafe_allow_html=True)
-        st.caption("Closed-form catenary y(x)=a(cosh(x/a)-1); kappa_TDP = 1/a = w/H. "
-                   "TDP at the origin, hang-off at the top-right.")
-
-st.markdown('<div class="sec">Layer 1 - transfer function H(f) &middot; MRU motion &rarr; TDP stress</div>',
-            unsafe_allow_html=True)
 _tf = payload["transfer"]
-_prov = _tf.get("provenance", {})
-if _tf["is_validated"]:
-    _badge = '<span class="tag pass">VALIDATED (project)</span>'
-    _src = f' &nbsp;<span class="foot">route: imported &middot; {_prov.get("source_tool", "")} ' \
-           f'{_prov.get("tool_version", "")} &middot; {_prov.get("load_case", "")}</span>'
-else:
-    _badge = '<span class="tag syn">ILLUSTRATIVE / approximate - NOT project data</span>'
-    _src = f' &nbsp;<span class="foot">route: {_tf["route"]}</span>'
-st.markdown(f'<div style="margin:-2px 0 8px">{_badge}{_src}</div>', unsafe_allow_html=True)
-hc1, hc2 = dcols([3, 2])
-hc1.plotly_chart(transfer_fig(_tf), width="stretch", config={"displayModeBar": False})
-with hc2:
-    _peak = max(_tf["stress_mag"]) if _tf["stress_mag"] else 0.0
-    _ipk = _tf["stress_mag"].index(_peak) if _peak else 0
-    st.markdown(kpi_row([
-        kpi("Peak |H|", f"{_peak:.1f}", "MPa/m", "sig"),
-        kpi("at frequency", f'{_tf["freq"][_ipk]:.3f}', "Hz"),
-    ]), unsafe_allow_html=True)
-    if not _tf["is_validated"]:
-        st.caption("For a defensible TDP stress, import a validated OrcaFlex/RIFLEX/DeepLines "
-                   "H(f) (sidebar -> Transfer function -> route = imported). The reference and "
-                   "analytic routes are an illustrative table and a reduced-order model.")
-
-st.markdown('<div class="sec">Layer 2 - rainflow &middot; S-N &middot; Miner</div>', unsafe_allow_html=True)
-st.markdown(kpi_row([
-    kpi("Annual damage (time)", f'{dmg["annual_rate_time"]:.2e}', "/yr", "amber"),
-    kpi("Spectral (Dirlik)", f'{dmg["annual_rate_spectral"]:.2e}', "/yr"),
-    kpi("Block damage", f'{dmg["block_damage"]:.2e}'),
-    kpi("S-N class", cfg.riser.sn_class),
-]), unsafe_allow_html=True)
-l2a, l2b = dcols([1, 1])
-l2a.plotly_chart(sn_family_fig(cfg.riser.sn_class, cfg.riser.sn_environment),
-                 width="stretch", config={"displayModeBar": False})
+_dof = payload.get("dof_contributions", {"heave": 1.0})
 _ver = payload.get("verification")
-if _ver is not None:
-    l2b.plotly_chart(dirlik_verify_fig(_ver), width="stretch", config={"displayModeBar": False})
-    l2b.caption("Verification: the rainflow range histogram against the Dirlik and "
-                "narrow-band (Rayleigh) spectral PDFs on the same moments.")
-
-st.markdown(
-    f'<div class="sec">Layer 3 - remaining-life posterior &middot; {post["n_members"]:,} MC members &middot; '
-    'Bayesian contraction (90% CI ~ 1/&radic;T)</div>', unsafe_allow_html=True)
-pc1, pc2 = dcols([3, 2])
-pc1.plotly_chart(fan_fig(payload["bayesian_fan"], post["p50"]), width="stretch", config={"displayModeBar": False})
-pc2.plotly_chart(pdf_hist_fig(post), width="stretch", config={"displayModeBar": False})
-
+_lt = payload.get("long_term")
+_viv = payload.get("viv")
+_comb = payload.get("combined")
 _dfan = payload.get("divergence_fan")
-if _dfan is not None:
-    st.markdown('<div class="sec">Accumulated-damage divergence &middot; design vs actual wave climate '
-                '(spec &sect;5 gate)</div>', unsafe_allow_html=True)
-    vd1, vd2 = dcols([3, 2])
-    vd1.plotly_chart(divergence_fan_fig(_dfan), width="stretch", config={"displayModeBar": False})
-    with vd2:
-        _i15 = _dfan["years"].index(15.0) if 15.0 in _dfan["years"] else -1
-        st.markdown(kpi_row([
-            kpi("P10 @ yr 15", f'{100*_dfan["p10"][_i15]:.1f}', "%"),
-            kpi("P90 @ yr 15", f'{100*_dfan["p90"][_i15]:.1f}', "%", "amber"),
-        ]), unsafe_allow_html=True)
-        st.caption("AR(1) wave-climate Monte Carlo: how far the realised accumulated damage "
-                   "can drift from the design prediction. Spec gate: P10≈5%, P90≈28% at year 15.")
+_comb_life = _comb["life_years"] if _comb else dmg["deterministic_life_years"]
 
-st.markdown('<div class="sec">Decision - risk-based inspection schedule</div>', unsafe_allow_html=True)
-dc1, dc2 = dcols([3, 2])
-dc1.plotly_chart(pof_fig(insp), width="stretch", config={"displayModeBar": False})
-with dc2:
+tab_over, tab_struct, tab_env, tab_sense, tab_detect, tab_assim, tab_econ, tab_ledger, tab_prov = st.tabs(
+    ["Overview", "Structure", "Environment", "Sensing", "Detection",
+     "Assimilation", "Economics", "Ledger", "Provenance"]
+)
+
+# ========================== OVERVIEW ======================================= #
+with tab_over:
     st.markdown(kpi_row([
+        kpi("Deterministic life", life(dmg["deterministic_life_years"]), "yr", "sig"),
+        kpi("Combined wave+VIV life", life(_comb_life), "yr", "sig"),
+        kpi("P10 (conservative)", life(post["p10"]), "yr", "amber"),
+        kpi("P50 median", life(post["p50"]), "yr"),
         kpi("Next inspection", f'{insp["next_inspection_year"]:.1f}', "yr", "sig"),
-        kpi("Target PoF", f'{insp["target_pof"]*100:.1f}', "%"),
     ]), unsafe_allow_html=True)
-    st.markdown(kpi_row([
-        kpi("PoF at inspection", f'{insp["pof_at_next"]*100:.2f}', "%",
-            "alarm" if insp["pof_at_next"] > insp["target_pof"] * 1.05 else ""),
-    ]), unsafe_allow_html=True)
+    if _acc is not None:
+        _env_label = {"in_air": "in air", "seawater_cp": "seawater w/ CP"}.get(
+            dmg.get("sn_environment", "in_air"), dmg.get("sn_environment", "in_air"))
+        _pass = _acc["passes"]
+        st.markdown(kpi_row([
+            kpi("S-N environment", _env_label),
+            kpi("Design Fatigue Factor", f'{_acc["dff"]:.0f}', "x"),
+            kpi("DFF utilisation", f'{_acc["utilisation"]:.2f}', "", "sig" if _pass else "alarm"),
+            kpi("Acceptance", "PASS" if _pass else "FAIL", "", "sig" if _pass else "alarm"),
+            kpi("Long-term (scatter) life", life(_lt["life_years"]) if _lt else "-", "yr"),
+        ]), unsafe_allow_html=True)
+    if _cat is not None:
+        st.markdown('<div class="sec">System configuration &middot; SCR side elevation '
+                    '(vessel &rarr; catenary &rarr; touchdown)</div>', unsafe_allow_html=True)
+        components.html(
+            f'<div style="width:100%;background:#fff">{system_schematic_svg(payload)}</div>',
+            height=470, scrolling=False,
+        )
 
-# --- Conditional CBM economics (Eq. 11): value depends on phi, not a flat saving ---
-_net_tone = "sig" if econ.get("net_positive") else "alarm"
-_net = econ["fleet_delta_c_usd"] / 1e6
-_phi_src = "from posterior" if econ.get("phi_is_endogenous") else "break-even ref"
-st.markdown('<div class="sec">Conditional economics (Eq. 11) &middot; discounted value of monitoring vs &phi;</div>',
-            unsafe_allow_html=True)
-ec1, ec2 = dcols([3, 2])
-ec1.plotly_chart(econ_fig(econ), width="stretch", config={"displayModeBar": False})
-with ec2:
-    st.markdown(kpi_row([
-        kpi(f"Net fleet value ΔC ({econ['n_units']}u, {econ['horizon_yr']:.0f}yr)",
-            f'{_net:+.1f}', "US$M", _net_tone),
-        kpi("per unit", f'{econ["per_unit_delta_c_usd"]/1e6:+.2f}', "US$M", _net_tone),
-    ]), unsafe_allow_html=True)
-    st.markdown(kpi_row([
-        kpi(f"Fleet φ ({_phi_src})", f'{econ["phi"]:.2f}', "", "amber"),
-        kpi("Break-even φ*", f'{econ["breakeven_phi"]:.2f}'),
-    ]), unsafe_allow_html=True)
-    st.caption(
-        "φ = P(asset ages slower than design), estimated from this run's remaining-life "
-        f"posterior. The sensor pays only when φ > φ*={econ['breakeven_phi']:.2f}; at r="
-        f"{econ['discount_rate']*100:.0f}% discount this fleet's φ={econ['phi']:.2f} makes it a "
-        f"net {'gain' if econ.get('net_positive') else 'cost'}. Discounting replaces the "
-        "retracted flat headline saving.")
+# ========================== STRUCTURE ====================================== #
+with tab_struct:
+    st.caption("Riser geometry and structural response: the solved catenary and the "
+               "cross-flow modal shapes that carry VIV.")
+    if _cat is not None:
+        st.markdown('<div class="sec">Static catenary configuration &middot; riser shape &amp; touchdown</div>',
+                    unsafe_allow_html=True)
+        gc1, gc2 = dcols([3, 2])
+        gc1.plotly_chart(catenary_fig(_cat), width="stretch", config={"displayModeBar": False})
+        with gc2:
+            st.markdown(kpi_row([
+                kpi("Catenary parameter a", f'{_cat["catenary_parameter"]:.0f}', "m"),
+                kpi("Horizontal span", f'{_cat["horizontal_span"]:.0f}', "m"),
+            ]), unsafe_allow_html=True)
+            st.markdown(kpi_row([
+                kpi("Arc length", f'{_cat["arc_length"]:.0f}', "m"),
+                kpi("TDP curvature", f'{_cat["tdp_curvature"]*1e3:.3f}', "1/km", "amber"),
+            ]), unsafe_allow_html=True)
+            st.caption("Closed-form catenary y(x)=a(cosh(x/a)-1); kappa_TDP = 1/a = w/H.")
+    if _viv is not None and _viv.get("enabled"):
+        st.markdown('<div class="sec">Cross-flow modal response &middot; tensioned-beam modes</div>',
+                    unsafe_allow_html=True)
+        vm1, vm2 = dcols([1, 1])
+        vm1.plotly_chart(viv_mode_fig(_viv), width="stretch", config={"displayModeBar": False})
+        vm1.caption(f"Dominant excited cross-flow mode {_viv['dominant_mode']} standing wave "
+                    "(real tensioned-beam eigensolve).")
+        vm2.plotly_chart(viv_vr_fig(_viv), width="stretch", config={"displayModeBar": False})
+        vm2.caption("Reduced velocity per mode; amber = inside the lock-in band, i.e. excited.")
 
-vc1, vc2 = dcols([3, 2])
-with vc1:
-    st.markdown('<div class="sec">Validation gates (spec section 5)</div>', unsafe_allow_html=True)
-    for x in g:
-        dot = GOOD if x["passed"] else ALARM
+# ========================== ENVIRONMENT ==================================== #
+with tab_env:
+    st.caption("The metocean loading: the identified sea state, the spectra, and the "
+               "long-term wave scatter climate that drives fatigue.")
+    st.markdown(kpi_row([
+        kpi("Sig. heave Hm0", f'{sea["hs"]:.2f}', "m"),
+        kpi("Tp", f'{sea["tp"]:.1f}', "s"),
+        kpi("Tz", f'{sea["tz"]:.1f}', "s"),
+        kpi("gamma fit", f'{sea["gamma"]:.1f}'),
+        kpi("Env. capacity factor", f'{env["factor"]:.3f}' if env["enabled"] else "-", "", "amber"),
+    ]), unsafe_allow_html=True)
+    st.markdown('<div class="sec">Spectral analysis &middot; motion &amp; stress PSD</div>', unsafe_allow_html=True)
+    st.plotly_chart(spectra_fig(payload["spectrum"]), width="stretch", config={"displayModeBar": False})
+    if _lt is not None:
+        st.markdown('<div class="sec">Long-term fatigue &middot; wave scatter-diagram summation '
+                    '(DNV-RP-C203 &sect;5) &middot; D = &Sigma; p&#8202;D</div>', unsafe_allow_html=True)
+        lt1, lt2 = dcols([3, 2])
+        lt1.plotly_chart(scatter_fig(_lt), width="stretch", config={"displayModeBar": False})
+        with lt2:
+            _top = _lt["contributions"][0] if _lt["contributions"] else None
+            st.markdown(kpi_row([
+                kpi("Long-term life", life(_lt["life_years"]), "yr", "sig"),
+                kpi("Sea-state cells", f'{_lt["n_cells"]}'),
+            ]), unsafe_allow_html=True)
+            if _top is not None:
+                st.markdown(kpi_row([
+                    kpi("Top driver cell", f'Hs {_top["hs"]:.1f} / Tp {_top["tp"]:.0f}', "m/s", "amber"),
+                    kpi("its damage share", f'{100*_top["damage_fraction"]:.0f}', "%", "amber"),
+                ]), unsafe_allow_html=True)
+            st.caption(f"Damage summed over {_lt['n_cells']} sea states weighted by occurrence "
+                       f"({_lt['source']}). Real SCR fatigue is dominated by rare storms - upload a "
+                       "project scatter table in the sidebar.")
+
+# ========================== SENSING ======================================== #
+with tab_sense:
+    st.caption("From the vessel MRU recording to the touchdown stress: 6-DOF hang-off "
+               "resolution and the motion&rarr;stress transfer function.")
+    st.markdown('<div class="sec">MRU hang-off motion (measured / synthetic)</div>', unsafe_allow_html=True)
+    tf_trace = _fig(200)
+    tf_trace.add_scatter(x=payload["trace"]["time"], y=payload["trace"]["heave"],
+                         line=dict(color=SIGNAL, width=1))
+    tf_trace.update_layout(xaxis=dict(title="t [s]", gridcolor=GRID, zeroline=False),
+                           yaxis=dict(title="heave [m]", gridcolor=GRID, zeroline=False))
+    st.plotly_chart(tf_trace, width="stretch", config={"displayModeBar": False})
+    if len(_dof) > 1:
+        st.markdown('<div class="sec">6-DOF hang-off resolution (Eq. 6) &middot; which DOF drives TDP fatigue</div>',
+                    unsafe_allow_html=True)
+        kc1, kc2 = dcols([3, 2])
+        kc1.plotly_chart(dof_fig(_dof), width="stretch", config={"displayModeBar": False})
+        with kc2:
+            _topdof = max(_dof.items(), key=lambda kv: kv[1])
+            st.markdown(kpi_row([
+                kpi("Porch offset x", f'{cfg.hang_off.porch_x:.0f}', "m"),
+                kpi("Dominant DOF", _topdof[0].upper(), f'{100*_topdof[1]:.0f}%', "amber"),
+            ]), unsafe_allow_html=True)
+            st.caption("z_ho = heave - x_p*pitch + y_p*roll (small-angle Eq. 6).")
+    st.markdown('<div class="sec">Transfer function H(f) &middot; MRU motion &rarr; TDP stress</div>',
+                unsafe_allow_html=True)
+    _prov = _tf.get("provenance", {})
+    if _tf["is_validated"]:
+        _badge = '<span class="tag pass">VALIDATED (project)</span>'
+        _src = f' &nbsp;<span class="foot">route: imported &middot; {_prov.get("source_tool", "")}</span>'
+    else:
+        _badge = '<span class="tag syn">ILLUSTRATIVE / approximate - NOT project data</span>'
+        _src = f' &nbsp;<span class="foot">route: {_tf["route"]}</span>'
+    st.markdown(f'<div style="margin:-2px 0 8px">{_badge}{_src}</div>', unsafe_allow_html=True)
+    hc1, hc2 = dcols([3, 2])
+    hc1.plotly_chart(transfer_fig(_tf), width="stretch", config={"displayModeBar": False})
+    with hc2:
+        _peak = max(_tf["stress_mag"]) if _tf["stress_mag"] else 0.0
+        _ipk = _tf["stress_mag"].index(_peak) if _peak else 0
+        st.markdown(kpi_row([
+            kpi("Peak |H|", f"{_peak:.1f}", "MPa/m", "sig"),
+            kpi("at frequency", f'{_tf["freq"][_ipk]:.3f}', "Hz"),
+        ]), unsafe_allow_html=True)
+        if not _tf["is_validated"]:
+            st.caption("Import a validated OrcaFlex/RIFLEX/DeepLines H(f) (sidebar) for a "
+                       "project-grade TDP stress transfer.")
+
+# ========================== DETECTION ====================================== #
+with tab_detect:
+    st.caption("Damage detection: rainflow + S-N + Miner, the spectral cross-check, and "
+               "the VIV screening - the mechanisms that consume fatigue life.")
+    st.markdown('<div class="sec">Rainflow &middot; S-N &middot; Miner (DNV-RP-C203 / ASTM E1049)</div>',
+                unsafe_allow_html=True)
+    st.markdown(kpi_row([
+        kpi("Annual damage (time)", f'{dmg["annual_rate_time"]:.2e}', "/yr", "amber"),
+        kpi("Spectral (Dirlik)", f'{dmg["annual_rate_spectral"]:.2e}', "/yr"),
+        kpi("Block damage", f'{dmg["block_damage"]:.2e}'),
+        kpi("S-N class", cfg.riser.sn_class),
+    ]), unsafe_allow_html=True)
+    l2a, l2b = dcols([1, 1])
+    l2a.plotly_chart(sn_family_fig(cfg.riser.sn_class, cfg.riser.sn_environment),
+                     width="stretch", config={"displayModeBar": False})
+    if _ver is not None:
+        l2b.plotly_chart(dirlik_verify_fig(_ver), width="stretch", config={"displayModeBar": False})
+        l2b.caption("Verification: rainflow histogram vs the Dirlik and narrow-band spectral PDFs.")
+    if _viv is not None and _viv.get("enabled"):
+        st.markdown('<div class="sec">Vortex-induced vibration (VIV) screening &middot; '
+                    'DNV-RP-F204 &middot; <span class="tag amber">SCREENING - not design</span></div>',
+                    unsafe_allow_html=True)
+        st.markdown(kpi_row([
+            kpi("Combined wave+VIV life", life(_comb_life), "yr", "sig"),
+            kpi("VIV-only life", life(_viv["life_years"]), "yr", "amber"),
+            kpi("Dominant VIV mode", f'{_viv["dominant_mode"]}'),
+            kpi("Surface current", f'{_viv["current_surface_velocity"]:.2f}', "m/s"),
+            kpi("Stability param Ks", f'{_viv["stability_parameter"]:.2f}'),
+        ]), unsafe_allow_html=True)
+        st.caption("Combined life adds the wave and VIV damage rates by Miner. VIV is a Griffin "
+                   "A/D lock-in upper bound - design-grade VIV needs Shear7 / VIVANA.")
+
+# ========================== ASSIMILATION =================================== #
+with tab_assim:
+    st.caption("Probabilistic remaining life: the Monte Carlo posterior, the Bayesian "
+               "contraction as monitoring accrues, and the design-vs-actual divergence.")
+    st.markdown(
+        f'<div class="sec">Remaining-life posterior &middot; {post["n_members"]:,} MC members &middot; '
+        'Bayesian contraction (90% CI ~ 1/&radic;T)</div>', unsafe_allow_html=True)
+    pc1, pc2 = dcols([3, 2])
+    pc1.plotly_chart(fan_fig(payload["bayesian_fan"], post["p50"]), width="stretch", config={"displayModeBar": False})
+    pc2.plotly_chart(pdf_hist_fig(post), width="stretch", config={"displayModeBar": False})
+    if _dfan is not None:
+        st.markdown('<div class="sec">Accumulated-damage divergence &middot; design vs actual wave climate '
+                    '(spec &sect;5 gate)</div>', unsafe_allow_html=True)
+        vd1, vd2 = dcols([3, 2])
+        vd1.plotly_chart(divergence_fan_fig(_dfan), width="stretch", config={"displayModeBar": False})
+        with vd2:
+            _i15 = _dfan["years"].index(15.0) if 15.0 in _dfan["years"] else -1
+            st.markdown(kpi_row([
+                kpi("P10 @ yr 15", f'{100*_dfan["p10"][_i15]:.1f}', "%"),
+                kpi("P90 @ yr 15", f'{100*_dfan["p90"][_i15]:.1f}', "%", "amber"),
+            ]), unsafe_allow_html=True)
+            st.caption("AR(1) wave-climate Monte Carlo. Spec gate: P10≈5%, P90≈28% at year 15.")
+
+# ========================== ECONOMICS ====================================== #
+with tab_econ:
+    st.caption("The inspection decision and the conditional value of monitoring.")
+    st.markdown('<div class="sec">Risk-based inspection schedule</div>', unsafe_allow_html=True)
+    dc1, dc2 = dcols([3, 2])
+    dc1.plotly_chart(pof_fig(insp), width="stretch", config={"displayModeBar": False})
+    with dc2:
+        st.markdown(kpi_row([
+            kpi("Next inspection", f'{insp["next_inspection_year"]:.1f}', "yr", "sig"),
+            kpi("Target PoF", f'{insp["target_pof"]*100:.1f}', "%"),
+        ]), unsafe_allow_html=True)
+        st.markdown(kpi_row([
+            kpi("PoF at inspection", f'{insp["pof_at_next"]*100:.2f}', "%",
+                "alarm" if insp["pof_at_next"] > insp["target_pof"] * 1.05 else ""),
+        ]), unsafe_allow_html=True)
+    _net_tone = "sig" if econ.get("net_positive") else "alarm"
+    _net = econ["fleet_delta_c_usd"] / 1e6
+    _phi_src = "from posterior" if econ.get("phi_is_endogenous") else "break-even ref"
+    st.markdown('<div class="sec">Conditional economics (Eq. 11) &middot; discounted value of monitoring vs &phi;</div>',
+                unsafe_allow_html=True)
+    ec1, ec2 = dcols([3, 2])
+    ec1.plotly_chart(econ_fig(econ), width="stretch", config={"displayModeBar": False})
+    with ec2:
+        st.markdown(kpi_row([
+            kpi(f"Net fleet value ΔC ({econ['n_units']}u, {econ['horizon_yr']:.0f}yr)",
+                f'{_net:+.1f}', "US$M", _net_tone),
+            kpi("per unit", f'{econ["per_unit_delta_c_usd"]/1e6:+.2f}', "US$M", _net_tone),
+        ]), unsafe_allow_html=True)
+        st.markdown(kpi_row([
+            kpi(f"Fleet φ ({_phi_src})", f'{econ["phi"]:.2f}', "", "amber"),
+            kpi("Break-even φ*", f'{econ["breakeven_phi"]:.2f}'),
+        ]), unsafe_allow_html=True)
+        st.caption(f"The sensor pays only when φ > φ*={econ['breakeven_phi']:.2f}; at r="
+                   f"{econ['discount_rate']*100:.0f}% discount this fleet's φ={econ['phi']:.2f} makes it a "
+                   f"net {'gain' if econ.get('net_positive') else 'cost'}.")
+
+# ========================== LEDGER ========================================= #
+with tab_ledger:
+    st.caption("The auditable results ledger - every headline number with the standard it "
+               "rests on, for this exact run.")
+    _rows = [
+        ("Deterministic fatigue life", f"{life(dmg['deterministic_life_years'])} yr", "DNV-RP-C203 Miner"),
+        ("Remaining life P10 / P50 / P90", f"{life(post['p10'])} / {life(post['p50'])} / {life(post['p90'])} yr", "10k Monte Carlo"),
+        ("Long-term (scatter) life", f"{life(_lt['life_years'])} yr" if _lt else "-", "DNV-RP-C203 Sec.5"),
+        ("Combined wave+VIV life", f"{life(_comb_life)} yr", "Miner (wave + VIV)"),
+        ("VIV-only life", f"{life(_viv['life_years'])} yr" if _viv and _viv.get('enabled') else "n/a", "DNV-RP-F204 screening"),
+        ("DFF utilisation / acceptance", f"{_acc['utilisation']:.2f} -> {'PASS' if _acc['passes'] else 'FAIL'}" if _acc else "-", "DNV-OS-F201"),
+        ("Next inspection", f"{insp['next_inspection_year']:.1f} yr (target PoF {insp['target_pof']*100:.1f}%)", "RBI"),
+        ("Net fleet value dC", f"{econ['fleet_delta_c_usd']/1e6:+.1f} US$M", "Eq. 11 discounted"),
+        ("S-N class / environment", f"{cfg.riser.sn_class} / {dmg.get('sn_environment', 'in_air')}", "DNV-RP-C203"),
+        ("Identified sea state Hs / Tp", f"{sea['hs']:.2f} m / {sea['tp']:.1f} s", "JONSWAP fit"),
+        ("Annual damage (time / spectral)", f"{dmg['annual_rate_time']:.2e} / {dmg['annual_rate_spectral']:.2e} /yr", "rainflow / Dirlik"),
+    ]
+    _tbl = ['<table class="ledger"><thead><tr><th>Quantity</th><th>Value</th><th>Basis</th></tr></thead><tbody>']
+    for q, v, b in _rows:
+        _tbl.append(f'<tr><td>{q}</td><td class="lv">{v}</td><td class="lb">{b}</td></tr>')
+    _tbl.append("</tbody></table>")
+    st.markdown("".join(_tbl), unsafe_allow_html=True)
+
+# ========================== PROVENANCE ===================================== #
+with tab_prov:
+    st.caption("Reproducibility and verification: the acceptance gates and the exact "
+               "inputs / library versions behind this run, plus downloadable reports.")
+    vc1, vc2 = dcols([3, 2])
+    with vc1:
+        st.markdown('<div class="sec">Validation gates (spec section 5)</div>', unsafe_allow_html=True)
+        for x in g:
+            dot = GOOD if x["passed"] else ALARM
+            st.markdown(
+                f'<div class="gate"><span class="dot" style="background:{dot}"></span>'
+                f'<span>{x["name"]}</span><span class="actual">{x["actual"]}</span></div>',
+                unsafe_allow_html=True,
+            )
+    with vc2:
+        st.markdown('<div class="sec">Provenance</div>', unsafe_allow_html=True)
         st.markdown(
-            f'<div class="gate"><span class="dot" style="background:{dot}"></span>'
-            f'<span>{x["name"]}</span><span class="actual">{x["actual"]}</span></div>',
+            f'<div class="foot">core v{prov["core_version"]} &middot; numpy {prov["numpy_version"]} &middot; '
+            f'scipy {prov["scipy_version"]}<br>seed {prov["seed"]} &middot; '
+            f'H(f) {"reduced-order" if prov["transfer_is_reduced_order"] else "reference"} &middot; '
+            f'cfg {prov["config_sha256"][:12]}<br>'
+            f'{prov["n_samples"]:,} samples @ {prov["sample_rate_hz"]:.1f} Hz</div>',
             unsafe_allow_html=True,
         )
-with vc2:
-    st.markdown('<div class="sec">Reports & provenance</div>', unsafe_allow_html=True)
-    st.markdown(
-        f'<div class="foot">core v{prov["core_version"]} &middot; numpy {prov["numpy_version"]} &middot; '
-        f'scipy {prov["scipy_version"]}<br>seed {prov["seed"]} &middot; '
-        f'H(f) {"reduced-order" if prov["transfer_is_reduced_order"] else "reference"} &middot; '
-        f'cfg {prov["config_sha256"][:12]}<br>'
-        f'{prov["n_samples"]:,} samples @ {prov["sample_rate_hz"]:.1f} Hz</div>',
-        unsafe_allow_html=True,
-    )
-    st.write("")
-    pdf_bytes = build_pdf(cfg.model_dump_json(), "synthetic" if is_synth else "upload", json.dumps(payload))
-    st.download_button("⬇  Download PDF report", pdf_bytes,
-                       file_name="scr-twin-integrity-report.pdf", mime="application/pdf", width="stretch")
-    bundle = {
-        "config": json.loads(cfg.model_dump_json()),
-        "source": payload.get("source", {"kind": "synthetic" if is_synth else "upload"}),
-        "provenance": prov,
-        "summary": {"sea_state": sea, "damage": dmg,
-                    "posterior": {k: post[k] for k in ("p10", "p50", "p90", "n_members")},
-                    "inspection": insp["next_inspection_year"], "economics": econ},
-    }
-    st.download_button("⬇  Export provenance bundle (JSON)", json.dumps(bundle, indent=2),
-                       file_name="scr-twin-provenance.json", mime="application/json", width="stretch")
+        st.write("")
+        pdf_bytes = build_pdf(cfg.model_dump_json(), "synthetic" if is_synth else "upload", json.dumps(payload))
+        st.download_button("⬇  Download PDF report", pdf_bytes,
+                           file_name="scr-twin-integrity-report.pdf", mime="application/pdf", width="stretch")
+        bundle = {
+            "config": json.loads(cfg.model_dump_json()),
+            "source": payload.get("source", {"kind": "synthetic" if is_synth else "upload"}),
+            "provenance": prov,
+            "summary": {"sea_state": sea, "damage": dmg,
+                        "posterior": {k: post[k] for k in ("p10", "p50", "p90", "n_members")},
+                        "inspection": insp["next_inspection_year"], "economics": econ},
+        }
+        st.download_button("⬇  Export provenance bundle (JSON)", json.dumps(bundle, indent=2),
+                           file_name="scr-twin-provenance.json", mime="application/json", width="stretch")
 
 st.markdown(
     '<div class="foot" style="margin-top:16px;text-align:center">Physics-based digital twin &middot; '

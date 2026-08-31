@@ -57,8 +57,17 @@ def test_analyze_synthetic_full_payload(config):
     assert r.status_code == 200
     p = r.json()
     for key in ["sea_state", "spectrum", "catenary", "verification", "divergence_fan",
-                "damage", "posterior", "bayesian_fan", "inspection", "economics", "provenance"]:
+                "long_term", "damage", "posterior", "bayesian_fan", "inspection", "economics", "provenance"]:
         assert key in p
+    # Long-term scatter-diagram fatigue: finite life, cells sum, a driver identified.
+    lt = p["long_term"]
+    assert lt["life_years"] > 0.0 and lt["n_cells"] >= 1
+    assert abs(sum(c["damage_fraction"] for c in lt["contributions"]) - 1.0) < 1e-6
+    # VIV screening (default current on) + combined wave+VIV life shorter than wave-only.
+    assert p["viv"]["enabled"] is True
+    assert len(p["viv"]["modes"]) >= 4 and p["viv"]["dominant_mode"] >= 1
+    assert p["combined"]["life_years"] <= p["damage"]["deterministic_life_years"] + 1e-6
+    assert p["combined"]["viv_rate"] >= 0.0
     assert p["posterior"]["p10"] < p["posterior"]["p50"] < p["posterior"]["p90"]
     assert p["provenance"]["motion_is_synthetic"] is True
     # AR(1) Bayesian fan: driven by real (autocorrelated) observations, not a
