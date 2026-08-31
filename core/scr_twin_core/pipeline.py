@@ -24,7 +24,7 @@ from . import __version__
 from .config import AnalysisConfig
 from .environment import EnvironmentCorrection
 from .hang_off_kinematics import resolve_hang_off
-from .miner import SECONDS_PER_YEAR, DamageResult, block_damage
+from .miner import SECONDS_PER_YEAR, DamageResult, FatigueAcceptance, block_damage, dff_acceptance
 from .montecarlo import MonteCarloResult, UncertaintyModel, run_monte_carlo
 from .rainflow import count_cycles
 from .sn import MeanStressModel, SNCurve, get_curve
@@ -82,6 +82,7 @@ class FullResult:
     annual_damage_rate_time: float
     annual_damage_rate_spectral: float
     deterministic_life_years: float
+    fatigue_acceptance: FatigueAcceptance
     monte_carlo: MonteCarloResult
     environment_factor: float
     environment: EnvironmentCorrection | None
@@ -97,6 +98,8 @@ class FullResult:
             "annual_damage_rate_time": self.annual_damage_rate_time,
             "annual_damage_rate_spectral": self.annual_damage_rate_spectral,
             "deterministic_life_years": self.deterministic_life_years,
+            "fatigue_utilisation": self.fatigue_acceptance.utilisation,
+            "fatigue_passes": self.fatigue_acceptance.passes,
             "life_p10": self.monte_carlo.p10,
             "life_p50": self.monte_carlo.p50,
             "life_p90": self.monte_carlo.p90,
@@ -158,7 +161,7 @@ def run_full_analysis(
     riser = config.riser
     section = riser.pipe_section()
     catenary = riser.catenary()
-    base_curve = get_curve(riser.sn_class)
+    base_curve = get_curve(riser.sn_class, riser.sn_environment)
     correction = config.environment.correction()
     curve, env_factor = _corrected_curve(base_curve, correction)
 
@@ -245,6 +248,9 @@ def run_full_analysis(
     )
     annual_rate_time = td_block.damage_rate_per_year
     life_years = float("inf") if annual_rate_time <= 0.0 else 1.0 / annual_rate_time
+    acceptance = dff_acceptance(
+        life_years, riser.design_service_life_years, riser.design_fatigue_factor
+    )
 
     # --- Spectral pathway (Dirlik against the two-slope curve) as a cross-check ---
     tf_spec = build_tf(f_w)
@@ -309,6 +315,7 @@ def run_full_analysis(
         annual_damage_rate_time=annual_rate_time,
         annual_damage_rate_spectral=annual_rate_spectral,
         deterministic_life_years=life_years,
+        fatigue_acceptance=acceptance,
         monte_carlo=mc,
         environment_factor=env_factor,
         environment=correction,

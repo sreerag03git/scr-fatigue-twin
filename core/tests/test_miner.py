@@ -5,7 +5,12 @@ from __future__ import annotations
 import numpy as np
 import pytest
 
-from scr_twin_core.miner import SECONDS_PER_YEAR, block_damage, miner_damage
+from scr_twin_core.miner import (
+    SECONDS_PER_YEAR,
+    block_damage,
+    dff_acceptance,
+    miner_damage,
+)
 from scr_twin_core.rainflow import CycleCount
 from scr_twin_core.sn import MeanStressModel, cycles_to_failure, get_curve
 
@@ -109,3 +114,30 @@ def test_mean_stress_requires_uts():
     with pytest.raises(ValueError):
         miner_damage(_cycle_with_mean(100e6, 100e6), curve,
                      mean_stress_model=MeanStressModel.GOODMAN)
+
+
+# --- Design Fatigue Factor acceptance ------------------------------------- #
+def test_dff_acceptance_pass():
+    a = dff_acceptance(predicted_life_years=90.0, design_service_life_years=25.0, dff=3.0)
+    assert a.allowable_life_years == pytest.approx(30.0)
+    assert a.utilisation == pytest.approx(3.0 * 25.0 / 90.0)  # 0.8333
+    assert a.passes is True
+
+
+def test_dff_acceptance_fail():
+    a = dff_acceptance(predicted_life_years=90.0, design_service_life_years=25.0, dff=10.0)
+    assert a.utilisation == pytest.approx(10.0 * 25.0 / 90.0)  # 2.778
+    assert a.passes is False
+
+
+def test_dff_acceptance_infinite_life_passes():
+    a = dff_acceptance(predicted_life_years=float("inf"), design_service_life_years=25.0, dff=10.0)
+    assert a.utilisation == 0.0
+    assert a.passes is True
+
+
+def test_dff_acceptance_rejects_bad_inputs():
+    with pytest.raises(ValueError):
+        dff_acceptance(50.0, 25.0, dff=0.0)
+    with pytest.raises(ValueError):
+        dff_acceptance(50.0, 0.0, dff=3.0)

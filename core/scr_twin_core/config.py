@@ -26,7 +26,7 @@ from .environment import (
 )
 from .hang_off_kinematics import PorchGeometry
 from .section import PipeSection, submerged_weight
-from .sn import DNV_C203_IN_AIR, MeanStressModel
+from .sn import DNV_C203_IN_AIR, MeanStressModel, SNEnvironment
 
 SNClassName = Literal["B1", "B2", "C", "C1", "C2", "D", "E", "F", "F1", "F3", "G"]
 
@@ -58,6 +58,17 @@ class RiserConfig(BaseModel):
 
     scf: float = Field(default=1.0, ge=1.0, le=10.0, description="Stress concentration factor")
     sn_class: SNClassName = Field(default="F1", description="DNV-RP-C203 S-N class")
+    sn_environment: SNEnvironment = Field(
+        default=SNEnvironment.IN_AIR,
+        description="S-N curve family: in-air (Table 2-1) or seawater-with-CP (Table 2-2)",
+    )
+    design_fatigue_factor: float = Field(
+        default=1.0, ge=1.0, le=10.0,
+        description="DFF applied in the acceptance check (DNV-OS-F201: e.g. 3 or 10 by safety class)",
+    )
+    design_service_life_years: float = Field(
+        default=25.0, gt=0.0, le=100.0, description="Required service life for the DFF check [yr]",
+    )
     weld_thickness: float | None = Field(
         default=None, gt=0.0, description="Thickness for the (t/t_ref)^k correction [m]; defaults to wall_thickness"
     )

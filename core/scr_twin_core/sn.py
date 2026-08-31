@@ -54,6 +54,13 @@ class SNCurve:
         return 10.0 ** ((self.log_a1 - np.log10(self.n_transition)) / self.m1)
 
 
+class SNEnvironment(StrEnum):
+    """Corrosive-environment S-N curve family (DNV-RP-C203 Tables 2-1 / 2-2)."""
+
+    IN_AIR = "in_air"
+    SEAWATER_CP = "seawater_cp"  # seawater with cathodic protection
+
+
 # DNV-RP-C203 Table 2-1, S-N curves in air. Stress in MPa.
 DNV_C203_IN_AIR: dict[str, SNCurve] = {
     "B1": SNCurve("B1", 4.0, 15.117, 5.0, 17.146, 0.00),
@@ -70,6 +77,39 @@ DNV_C203_IN_AIR: dict[str, SNCurve] = {
 }
 
 
+def _seawater_cp_from_air(air: SNCurve) -> SNCurve:
+    """Derive the DNV-RP-C203 Table 2-2 seawater-with-CP curve from an air curve.
+
+    The high-cycle (m2) branch is IDENTICAL to the in-air curve (the two families
+    coincide for N > 1e7); the slope change is moved to N = 1e6, and the steep
+    (m1) branch is set continuous with the shared m2 branch at 1e6:
+
+        log_a1_cp = 6 + m1 * (log_a2 - 6) / m2
+
+    so at N = 1e6 both branches give the same stress. This reproduces the
+    published Table 2-2 intercepts exactly (e.g. D -> log_a1 = 11.764, knee stress
+    83.4 MPa at 1e6; B1 -> 14.917).
+    """
+    log_a1_cp = 6.0 + air.m1 * (air.log_a2 - 6.0) / air.m2
+    return SNCurve(
+        air.name, air.m1, log_a1_cp, air.m2, air.log_a2,
+        air.thickness_exponent, n_transition=1.0e6,
+    )
+
+
+# DNV-RP-C203 Table 2-2, S-N curves in seawater with cathodic protection.
+# (Free-corrosion, Table 2-3, is a documented follow-on: it needs the exact
+# published single-slope intercepts and is not constructed here.)
+DNV_C203_SEAWATER_CP: dict[str, SNCurve] = {
+    name: _seawater_cp_from_air(curve) for name, curve in DNV_C203_IN_AIR.items()
+}
+
+_SN_TABLES: dict[SNEnvironment, dict[str, SNCurve]] = {
+    SNEnvironment.IN_AIR: DNV_C203_IN_AIR,
+    SNEnvironment.SEAWATER_CP: DNV_C203_SEAWATER_CP,
+}
+
+
 class MeanStressModel(StrEnum):
     """Mean-stress correction applied before entering the S-N curve."""
 
@@ -79,15 +119,21 @@ class MeanStressModel(StrEnum):
     SWT = "swt"  # Smith-Watson-Topper
 
 
-def get_curve(sn_class: str) -> SNCurve:
-    """Look up a DNV-RP-C203 in-air curve by class name (case-insensitive)."""
+def get_curve(
+    sn_class: str, environment: SNEnvironment = SNEnvironment.IN_AIR
+) -> SNCurve:
+    """Look up a DNV-RP-C203 curve by class name and corrosive environment.
+
+    ``environment`` defaults to ``IN_AIR`` (Table 2-1) so every existing call
+    site is unchanged; ``SEAWATER_CP`` selects the Table 2-2 family.
+    """
     key = sn_class.strip().upper()
-    if key not in DNV_C203_IN_AIR:
+    table = _SN_TABLES[environment]
+    if key not in table:
         raise KeyError(
-            f"Unknown S-N class {sn_class!r}. Available: "
-            f"{sorted(DNV_C203_IN_AIR)}"
+            f"Unknown S-N class {sn_class!r}. Available: {sorted(table)}"
         )
-    return DNV_C203_IN_AIR[key]
+    return table[key]
 
 
 def thickness_factor(thickness_m: float, exponent: float, t_ref: float = T_REF_DNV) -> float:

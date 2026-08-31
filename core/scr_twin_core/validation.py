@@ -27,7 +27,7 @@ from .inspection import (
 from .montecarlo import UncertaintyModel, accumulated_damage_divergence
 from .pipeline import run_full_analysis
 from .rainflow import count_cycles
-from .sn import get_curve
+from .sn import SNEnvironment, get_curve
 from .spectral import jonswap, significant_from_m0, spectral_moments
 from .spectral_damage import dirlik_damage_rate
 from .stress import random_phase_timeseries, rfft_frequencies
@@ -84,6 +84,24 @@ def _gate_sn_table() -> GateResult:
     return GateResult(
         "S-N DNV-RP-C203 points", "physics", worst < 2e-3,
         "fatigue limits match Table 2-1 <0.2%", f"max_error={worst:.2e}",
+    )
+
+
+def _gate_seawater_cp() -> GateResult:
+    # DNV-RP-C203 Table 2-2: class D seawater-with-CP knee is 83.4 MPa at 1e6
+    # cycles, and the high-cycle (m2) branch coincides with the in-air curve.
+    cp = get_curve("D", SNEnvironment.SEAWATER_CP)
+    air = get_curve("D", SNEnvironment.IN_AIR)
+    knee_err = abs(cp.fatigue_limit_mpa - 83.4) / 83.4
+    ok = (
+        cp.n_transition == 1.0e6
+        and knee_err < 3e-3
+        and abs(cp.log_a2 - air.log_a2) < 1e-9
+    )
+    return GateResult(
+        "S-N seawater-CP (Table 2-2)", "physics", ok,
+        "class-D knee 83.4 MPa @1e6, m2 branch = air",
+        f"knee={cp.fatigue_limit_mpa:.1f} MPa, err={knee_err:.2e}",
     )
 
 
@@ -183,6 +201,7 @@ def run_all_gates(seed: int = 0) -> list[GateResult]:
         _gate_jonswap_hs,
         _gate_catenary,
         _gate_sn_table,
+        _gate_seawater_cp,
         lambda: _gate_cross_method(seed),
         _gate_environment,
         lambda: _gate_divergence(seed),

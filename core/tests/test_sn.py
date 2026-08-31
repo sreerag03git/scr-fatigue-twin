@@ -7,7 +7,9 @@ import pytest
 
 from scr_twin_core.sn import (
     DNV_C203_IN_AIR,
+    DNV_C203_SEAWATER_CP,
     MeanStressModel,
+    SNEnvironment,
     apply_mean_stress,
     cycles_to_failure,
     get_curve,
@@ -124,3 +126,39 @@ def test_zero_mean_is_inert_for_every_model():
 def test_unknown_class_raises():
     with pytest.raises(KeyError):
         get_curve("Z9")
+
+
+# --- seawater-with-cathodic-protection S-N family (DNV Table 2-2) ---------- #
+def test_seawater_cp_reference_intercepts():
+    # Published DNV-RP-C203 Table 2-2 log_a1 values.
+    assert DNV_C203_SEAWATER_CP["D"].log_a1 == pytest.approx(11.764, abs=1e-3)
+    assert DNV_C203_SEAWATER_CP["B1"].log_a1 == pytest.approx(14.917, abs=1e-3)
+
+
+def test_seawater_cp_knee_moved_to_1e6():
+    cp = get_curve("D", SNEnvironment.SEAWATER_CP)
+    assert cp.n_transition == 1.0e6
+    # Knee stress for D in seawater-CP ~ 83.4 MPa at 1e6 cycles.
+    assert cp.fatigue_limit_mpa == pytest.approx(83.4, rel=2e-3)
+    n = cycles_to_failure(np.array([cp.fatigue_limit_mpa * 1e6]), cp)[0]
+    assert n == pytest.approx(1.0e6, rel=1e-2)
+
+
+def test_seawater_cp_shallow_branch_matches_air():
+    for name, air in DNV_C203_IN_AIR.items():
+        cp = DNV_C203_SEAWATER_CP[name]
+        assert cp.m2 == air.m2
+        assert cp.log_a2 == pytest.approx(air.log_a2, rel=1e-12)  # coincide for N > 1e7
+
+
+def test_seawater_cp_more_severe_than_air_in_wave_band():
+    # At a typical wave-band range (100 MPa) seawater-CP gives fewer cycles.
+    dsig = np.array([100e6])
+    n_air = cycles_to_failure(dsig, get_curve("D", SNEnvironment.IN_AIR))[0]
+    n_cp = cycles_to_failure(dsig, get_curve("D", SNEnvironment.SEAWATER_CP))[0]
+    assert n_cp < n_air
+
+
+def test_get_curve_defaults_to_air():
+    assert get_curve("F1").log_a1 == get_curve("F1", SNEnvironment.IN_AIR).log_a1
+    assert get_curve("F1").log_a1 == DNV_C203_IN_AIR["F1"].log_a1

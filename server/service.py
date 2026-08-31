@@ -185,6 +185,8 @@ def analyze(
             "deterministic_life_years": result.deterministic_life_years,
             "block_damage": result.time_domain_block.damage,
             "block_seconds": result.time_domain_block.block_seconds,
+            "sn_environment": str(config.riser.sn_environment.value),
+            "acceptance": result.fatigue_acceptance.as_dict(),
         },
         "environment": {
             "enabled": result.environment is not None,

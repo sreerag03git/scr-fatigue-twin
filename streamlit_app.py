@@ -42,6 +42,7 @@ from scr_twin_core.config import (  # noqa: E402
     RiserConfig,
     TransferConfig,
 )
+from scr_twin_core.sn import MeanStressModel, SNEnvironment  # noqa: E402
 from server import service  # noqa: E402
 
 # --------------------------------------------------------------------------- #
@@ -519,11 +520,22 @@ def build_pdf(config_json: str, source_kind: str, payload_json: str) -> bytes:
         ("JONSWAP gamma", f"{sea['gamma']:.1f}")])
     pdf.ln(1)
     section("Fatigue result")
-    kv([
+    _acc = dmg.get("acceptance")
+    _rows = [
         ("Deterministic life", f"{life(dmg['deterministic_life_years'])} yr"),
         ("Annual damage (time / spectral)", f"{dmg['annual_rate_time']:.2e}  /  {dmg['annual_rate_spectral']:.2e} /yr"),
         ("Remaining life P10 / P50 / P90", f"{life(post['p10'])} / {life(post['p50'])} / {life(post['p90'])} yr"),
-    ])
+    ]
+    if _acc is not None:
+        _env = {"in_air": "in air", "seawater_cp": "seawater w/ CP"}.get(
+            dmg.get("sn_environment", "in_air"), "in air")
+        _rows.append(("S-N environment", _env))
+        _rows.append((
+            "DFF acceptance",
+            f"util {_acc['utilisation']:.2f}  (DFF {_acc['dff']:.0f} x {_acc['design_service_life_years']:.0f} yr)"
+            f"  ->  {'PASS' if _acc['passes'] else 'FAIL'}",
+        ))
+    kv(_rows)
     pdf.ln(1)
     section("Decision")
     _net = f"${econ['fleet_delta_c_usd']/1e6:+.1f}M ({econ['n_units']}u, {econ['horizon_yr']:.0f}yr)"
@@ -645,6 +657,22 @@ with st.sidebar.expander("Steel catenary riser", expanded=True):
     ang = st.number_input("Hang-off [deg from vertical]", 1.0, 45.0, ref.hang_off_angle_deg, 1.0)
     scf = st.number_input("SCF", 1.0, 5.0, ref.scf, 0.05)
     sn_class = st.selectbox("DNV S-N class", SN_CLASSES, index=SN_CLASSES.index(ref.sn_class))
+    _sn_env_label = st.selectbox(
+        "S-N environment", ["in air (Table 2-1)", "seawater w/ CP (Table 2-2)"], index=0,
+        help="Seawater-with-cathodic-protection moves the slope change to 1e6 cycles "
+             "(DNV-RP-C203 Table 2-2) - more severe in the wave band than the in-air curve.",
+    )
+    sn_env = SNEnvironment.SEAWATER_CP if _sn_env_label.startswith("seawater") else SNEnvironment.IN_AIR
+
+with st.sidebar.expander("Acceptance & mean stress"):
+    dff = st.number_input("Design Fatigue Factor (DFF)", 1.0, 10.0, 3.0, 1.0,
+                          help="DNV-OS-F201: predicted life must exceed DFF x design service life.")
+    design_life = st.number_input("Design service life [yr]", 5.0, 60.0, 25.0, 5.0)
+    _ms_label = st.selectbox("Mean-stress model", ["none", "goodman", "gerber", "swt"], index=0,
+                             help="Rides on the static axial tension mean (T_TDP/A_steel).")
+    ms_model = MeanStressModel(_ms_label)
+    as_welded = st.checkbox("As-welded (DNV: no mean-stress benefit)", value=True,
+                            help="Uncheck for base-material / stress-relieved details to let the model act.")
 
 with st.sidebar.expander("Hang-off geometry (6-DOF, Eq. 6)"):
     st.caption("Resolves 6-DOF MRU motion to the porch: z_ho = heave - x_p*pitch + y_p*roll.")
@@ -687,6 +715,9 @@ try:
         riser=RiserConfig(
             outer_diameter=od, wall_thickness=wt, water_depth=depth,
             hang_off_angle_deg=ang, scf=scf, sn_class=sn_class,
+            sn_environment=sn_env, design_fatigue_factor=dff,
+            design_service_life_years=design_life,
+            mean_stress_model=ms_model, as_welded=as_welded,
             contents_density=ref.contents_density, coating_thickness=ref.coating_thickness,
             coating_density=ref.coating_density, is_reference_preset=False,
         ),
@@ -864,6 +895,21 @@ st.markdown(kpi_row([
     kpi("Next inspection", f'{insp["next_inspection_year"]:.1f}', "yr", "sig"),
     kpi("Env. capacity factor", f'{env["factor"]:.3f}' if env["enabled"] else "-", "", "amber"),
 ]), unsafe_allow_html=True)
+
+# --- Fatigue acceptance (DFF) + S-N environment (DNV-OS-F201 / RP-C203) ---
+_acc = dmg.get("acceptance")
+if _acc is not None:
+    _env_label = {"in_air": "in air", "seawater_cp": "seawater w/ CP"}.get(
+        dmg.get("sn_environment", "in_air"), dmg.get("sn_environment", "in_air"))
+    _pass = _acc["passes"]
+    st.markdown(kpi_row([
+        kpi("S-N environment", _env_label),
+        kpi("Design Fatigue Factor", f'{_acc["dff"]:.0f}', "x"),
+        kpi("Allowable life (life/DFF)", life(_acc["allowable_life_years"]), "yr"),
+        kpi("DFF utilisation", f'{_acc["utilisation"]:.2f}', "",
+            "sig" if _pass else "alarm"),
+        kpi("Acceptance", "PASS" if _pass else "FAIL", "", "sig" if _pass else "alarm"),
+    ]), unsafe_allow_html=True)
 
 st.markdown('<div class="sec">Sea state &middot; spectral analysis &middot; hang-off motion</div>', unsafe_allow_html=True)
 st.markdown(kpi_row([

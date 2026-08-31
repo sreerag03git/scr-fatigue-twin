@@ -25,6 +25,62 @@ SECONDS_PER_YEAR: float = 365.25 * 24.0 * 3600.0
 
 
 @dataclass(frozen=True)
+class FatigueAcceptance:
+    """Design-Fatigue-Factor acceptance check (DNV-OS-F201 / DNV-RP-C203 Sec. 2.3).
+
+    The design criterion is ``predicted life >= DFF * design service life``.
+    ``utilisation = DFF * design_service_life / predicted_life`` (<= 1 passes);
+    ``allowable_life = predicted_life / DFF`` is the DFF-derated life to compare
+    against the service life directly.
+    """
+
+    predicted_life_years: float
+    design_service_life_years: float
+    dff: float
+    allowable_life_years: float
+    utilisation: float
+    passes: bool
+
+    def as_dict(self) -> dict[str, object]:
+        return {
+            "predicted_life_years": self.predicted_life_years,
+            "design_service_life_years": self.design_service_life_years,
+            "dff": self.dff,
+            "allowable_life_years": self.allowable_life_years,
+            "utilisation": self.utilisation,
+            "passes": self.passes,
+        }
+
+
+def dff_acceptance(
+    predicted_life_years: float, design_service_life_years: float, dff: float
+) -> FatigueAcceptance:
+    """Apply the Design Fatigue Factor acceptance check.
+
+    ``predicted_life_years`` may be ``inf`` (a benign sea state); that yields zero
+    utilisation and a pass. ``dff`` and ``design_service_life_years`` must be
+    positive.
+    """
+    if dff <= 0.0:
+        raise ValueError("dff must be positive")
+    if design_service_life_years <= 0.0:
+        raise ValueError("design_service_life_years must be positive")
+    allowable = predicted_life_years / dff
+    if not np.isfinite(predicted_life_years) or predicted_life_years <= 0.0:
+        utilisation = 0.0 if predicted_life_years > 0.0 else float("inf")
+    else:
+        utilisation = dff * design_service_life_years / predicted_life_years
+    return FatigueAcceptance(
+        predicted_life_years=predicted_life_years,
+        design_service_life_years=design_service_life_years,
+        dff=dff,
+        allowable_life_years=allowable,
+        utilisation=utilisation,
+        passes=bool(allowable >= design_service_life_years),
+    )
+
+
+@dataclass(frozen=True)
 class DamageResult:
     """Outcome of a Miner summation over one analysis block.
 
