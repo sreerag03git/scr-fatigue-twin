@@ -1036,6 +1036,65 @@ def riser_tension_fig(cat: dict, w: float) -> go.Figure:
     return f
 
 
+def seabed_fig(sb: dict) -> go.Figure:
+    """Fatigue life vs seabed vertical stiffness (rigid base = conservative)."""
+    f = _fig(240)
+    f.add_scatter(x=sb["k_v_kpa"], y=sb["life_years"], line=dict(color=SIGNAL2, width=2.4),
+                  fill="tozeroy", fillcolor="rgba(11,125,132,0.06)")
+    f.add_hline(y=sb["base_life_years"], line=dict(color=ALARM, width=1, dash="dash"),
+                annotation_text="rigid seabed (base)", annotation_font_size=9, annotation_font_color=ALARM)
+    f.update_layout(xaxis=dict(title="seabed stiffness k_v [kPa]", type="log", gridcolor=GRID, zeroline=False),
+                    yaxis=dict(title="fatigue life [yr]", gridcolor=GRID, zeroline=False, rangemode="tozero"))
+    return f
+
+
+def reliability_fig(rel: dict) -> go.Figure:
+    """FORM importance factors (alpha^2) - which uncertainty source drives Pf."""
+    items = sorted(rel["importance"].items(), key=lambda kv: kv[1], reverse=True)
+    names = [k for k, _ in items]
+    vals = [100.0 * v for _, v in items]
+    colors = [SIGNAL2 if v == max(vals) else "#9db4bb" for v in vals]
+    f = _fig(240)
+    f.add_bar(y=names, x=vals, orientation="h", marker_color=colors,
+              text=[f"{v:.0f}%" for v in vals], textposition="outside", cliponaxis=False)
+    f.update_layout(
+        xaxis=dict(title="importance α² [% of ln-life variance]", gridcolor=GRID, zeroline=False,
+                   range=[0, max(vals) * 1.25 if vals else 1.0]),
+        yaxis=dict(autorange="reversed"), margin=dict(l=90, r=30, t=10, b=40))
+    return f
+
+
+def crack_growth_ui_fig(crack: dict) -> go.Figure:
+    """Paris-law crack depth a(t) vs year, with the critical depth and inspection."""
+    at = crack["a_of_t"]
+    f = _fig(240)
+    f.add_scatter(x=at["years"], y=at["depth_mm"], line=dict(color=ALARM, width=2.4),
+                  fill="tozeroy", fillcolor="rgba(192,67,47,0.07)", name="a(t)")
+    f.add_hline(y=crack["critical_depth_mm"], line=dict(color=ALARM, width=1, dash="dash"),
+                annotation_text="critical (through-wall)", annotation_font_size=9,
+                annotation_font_color=ALARM)
+    ci = crack.get("crack_inspection_year")
+    if ci is not None:
+        f.add_vline(x=ci, line=dict(color=SIGNAL2, width=1.2, dash="dot"),
+                    annotation_text="inspect", annotation_font_size=9, annotation_font_color=SIGNAL2)
+    f.update_layout(xaxis=dict(title="year", gridcolor=GRID, zeroline=False),
+                    yaxis=dict(title="crack depth a [mm]", gridcolor=GRID, zeroline=False, rangemode="tozero"))
+    return f
+
+
+def pod_crack_fig(crack: dict) -> go.Figure:
+    """Probability of detection vs crack size (subsea NDE)."""
+    pod = crack["pod"]
+    f = _fig(240)
+    f.add_scatter(x=pod["size_mm"], y=pod["prob"], line=dict(color=SIGNAL2, width=2.2),
+                  fill="tozeroy", fillcolor="rgba(11,125,132,0.06)")
+    f.add_hline(y=0.9, line=dict(color=AMBER, width=1, dash="dash"),
+                annotation_text="90% POD", annotation_font_size=9, annotation_font_color=AMBER)
+    f.update_layout(xaxis=dict(title="crack size [mm]", gridcolor=GRID, zeroline=False),
+                    yaxis=dict(title="probability of detection", gridcolor=GRID, zeroline=False, range=[0, 1]))
+    return f
+
+
 # --------------------------------------------------------------------------- #
 # PDF report (matplotlib charts + fpdf2; ASCII text for the core fonts)
 # --------------------------------------------------------------------------- #
@@ -1281,7 +1340,9 @@ with st.sidebar.expander("Steel catenary riser", expanded=True):
     wt = st.number_input("Wall thickness [m]", 0.005, 0.08, ref.wall_thickness, 0.001, format="%.4f")
     depth = st.number_input("Water depth [m]", 100.0, 3500.0, ref.water_depth, 50.0)
     ang = st.number_input("Hang-off [deg from vertical]", 1.0, 45.0, ref.hang_off_angle_deg, 1.0)
-    scf = st.number_input("SCF", 1.0, 5.0, ref.scf, 0.05)
+    scf = st.number_input("Detail SCF", 1.0, 5.0, ref.scf, 0.05)
+    hi_lo_mm = st.number_input("Girth-weld hi-lo misalignment [mm]", 0.0, 5.0, 0.0, 0.5,
+                               help="DNV-RP-C203 App.3: adds a physics-derived SCF to the detail SCF.")
     sn_class = st.selectbox("DNV S-N class", SN_CLASSES, index=SN_CLASSES.index(ref.sn_class))
     _sn_env_label = st.selectbox(
         "S-N environment", ["in air (Table 2-1)", "seawater w/ CP (Table 2-2)"], index=0,
@@ -1294,6 +1355,8 @@ with st.sidebar.expander("Acceptance & mean stress"):
     dff = st.number_input("Design Fatigue Factor (DFF)", 1.0, 10.0, 3.0, 1.0,
                           help="DNV-OS-F201: predicted life must exceed DFF x design service life.")
     design_life = st.number_input("Design service life [yr]", 5.0, 60.0, 25.0, 5.0)
+    safety_class = st.selectbox("Safety class (reliability target)", ["low", "normal", "high"], index=1,
+                                help="DNV-RP-C210 target annual Pf: low 1e-3, normal 1e-4, high 1e-5.")
     _ms_label = st.selectbox("Mean-stress model", ["none", "goodman", "gerber", "swt"], index=0,
                              help="Rides on the static axial tension mean (T_TDP/A_steel).")
     ms_model = MeanStressModel(_ms_label)
@@ -1356,9 +1419,9 @@ try:
     cfg = AnalysisConfig(
         riser=RiserConfig(
             outer_diameter=od, wall_thickness=wt, water_depth=depth,
-            hang_off_angle_deg=ang, scf=scf, sn_class=sn_class,
+            hang_off_angle_deg=ang, scf=scf, hi_lo_misalignment=hi_lo_mm / 1e3, sn_class=sn_class,
             sn_environment=sn_env, design_fatigue_factor=dff,
-            design_service_life_years=design_life,
+            design_service_life_years=design_life, safety_class=safety_class,
             mean_stress_model=ms_model, as_welded=as_welded,
             contents_density=ref.contents_density, coating_thickness=ref.coating_thickness,
             coating_density=ref.coating_density, is_reference_preset=False,
@@ -1540,6 +1603,9 @@ _ver = payload.get("verification")
 _lt = payload.get("long_term")
 _viv = payload.get("viv")
 _comb = payload.get("combined")
+_crack = payload.get("crack")
+_rel = payload.get("reliability")
+_seabed = payload.get("seabed")
 _dfan = payload.get("divergence_fan")
 _comb_life = _comb["life_years"] if _comb else dmg["deterministic_life_years"]
 
@@ -1658,6 +1724,29 @@ with tab_struct:
                 [[str(m["mode"]), f"{m['frequency_hz']:.3f}", f"{m['reduced_velocity']:.1f}",
                   f"{m['a_over_d']:.2f}", f"{m['stress_range_mpa']:.1f}", f"{m['annual_damage_rate']:.2e}"]
                  for m in _exc[:10]], value_cols=(1, 2, 3, 4, 5)), unsafe_allow_html=True)
+    if _seabed is not None and _seabed.get("enabled"):
+        st.markdown('<div class="eq">&#955;<sub>b</sub> = &#8730;(EI/H),&nbsp; '
+                    'l<sub>s</sub> = (4EI/k<sub>v</sub>)<sup>1/4</sup>,&nbsp; '
+                    'C<sub>s</sub> = &#955;<sub>b</sub>/(&#955;<sub>b</sub>+l<sub>s</sub>) '
+                    '<span class="c"># Pesce/Lenci TDP boundary-layer correction</span></div>',
+                    unsafe_allow_html=True)
+        st.markdown('<div class="sec" data-n="07">Seabed-stiffness sensitivity &middot; touchdown interaction '
+                    '<span class="tag amber">rigid base is conservative</span></div>', unsafe_allow_html=True)
+        sb1, sb2 = dcols([3, 2])
+        sb1.plotly_chart(seabed_fig(_seabed), width="stretch", config={"displayModeBar": False})
+        with sb2:
+            st.markdown(kpi_row([
+                kpi("Rigid-seabed life (base)", life(_seabed["base_life_years"]), "yr", "alarm"),
+                kpi("Bending layer λ_b", f'{_seabed["lambda_b"]:.1f}', "m"),
+            ]), unsafe_allow_html=True)
+            st.markdown(kpi_row([
+                kpi("Soft-clay life", life(_seabed["life_soft"]), "yr", "sig"),
+                kpi("Stiff-sand life", life(_seabed["life_stiff"]), "yr"),
+            ]), unsafe_allow_html=True)
+            st.caption("A compliant seabed distributes the TDP curvature (Cs<1), so the rigid-seabed "
+                       "life is a conservative lower bound - the band shows the soft-to-stiff span. "
+                       "TDP fatigue is very sensitive to seabed modelling; a project value of k_v "
+                       "(or a nonlinear soil model) narrows it.")
 
 # ========================== ENVIRONMENT ==================================== #
 with tab_env:
@@ -1770,6 +1859,17 @@ with tab_sense:
     if not _tf["is_validated"]:
         st.caption("Import a validated OrcaFlex/RIFLEX/DeepLines H(f) (sidebar) for a "
                    "project-grade TDP stress transfer; the magnitude AND phase are both applied.")
+    st.markdown('<div class="sec">Hot-spot SCF &middot; detail &times; misalignment (DNV-RP-C203 App.3)</div>',
+                unsafe_allow_html=True)
+    st.markdown(kpi_row([
+        kpi("Detail (geometric) SCF", f'{prov.get("geometric_scf", cfg.riser.scf):.3f}'),
+        kpi("Misalignment SCF", f'{prov.get("misalignment_scf", 1.0):.3f}',
+            "", "amber" if prov.get("misalignment_scf", 1.0) > 1.001 else ""),
+        kpi("Hi-lo eccentricity", f'{cfg.riser.hi_lo_misalignment*1e3:.1f}', "mm"),
+        kpi("Effective hot-spot SCF", f'{prov.get("effective_scf", cfg.riser.scf):.3f}', "", "sig"),
+    ]), unsafe_allow_html=True)
+    st.caption("SCF_eff = detail SCF x [1 + 3(δ_m/t)·exp(−√(t/D))] - the hi-lo misalignment part is "
+               "derived from the fabrication tolerance, not assumed.")
     _dh = payload.get("data_health")
     if _dh:
         st.markdown('<div class="sec">Data-health checks (ingest gate)</div>', unsafe_allow_html=True)
@@ -1839,6 +1939,32 @@ with tab_detect:
                  for m in _excd[:10]], value_cols=(1, 2, 3, 4, 5)), unsafe_allow_html=True)
         st.caption("Combined life adds the wave and VIV damage rates by Miner. VIV is a Griffin "
                    "A/D lock-in upper bound - design-grade VIV needs Shear7 / VIVANA.")
+    if _crack is not None and _crack.get("enabled"):
+        st.markdown('<div class="eq">da/dN = C(&#916;K)<sup>m</sup>,&nbsp; '
+                    '&#916;K = Y&#183;&#916;&#963;&#183;&#8730;(&#960;a) '
+                    '<span class="c"># BS 7910 Paris-law crack growth (parallel to S-N)</span></div>',
+                    unsafe_allow_html=True)
+        st.markdown('<div class="sec" data-n="07">Fracture mechanics &middot; Paris-law crack growth '
+                    '(BS 7910) <span class="tag amber">conservative ECA</span></div>', unsafe_allow_html=True)
+        fr1, fr2 = dcols([1, 1])
+        fr1.plotly_chart(crack_growth_ui_fig(_crack), width="stretch", config={"displayModeBar": False})
+        fr1.caption(f"A {_crack['initial_flaw_mm']:.1f} mm postulated flaw grown under the equivalent "
+                    f"stress range ({_crack['equivalent_stress_range_mpa']:.1f} MPa) to the "
+                    f"{_crack['critical_depth_mm']:.1f} mm wall.")
+        fr2.plotly_chart(pod_crack_fig(_crack), width="stretch", config={"displayModeBar": False})
+        fr2.caption("Probability of detection vs crack size (subsea MPI/ACFM-class) - the basis for "
+                    "crack-based inspection timing.")
+        _cl = _crack["crack_life_years"]
+        st.markdown(kpi_row([
+            kpi("Crack-based life", life(_cl), "yr", "amber"),
+            kpi("S-N deterministic life", life(dmg["deterministic_life_years"]), "yr", "sig"),
+            kpi("Equivalent Δσ", f'{_crack["equivalent_stress_range_mpa"]:.1f}', "MPa"),
+            kpi("Crack inspection", f'{_crack["crack_inspection_year"]:.1f}' if _crack.get("crack_inspection_year") else "-", "yr", "sig"),
+            kpi("Material law", _crack["material"].split(",")[0]),
+        ]), unsafe_allow_html=True)
+        st.caption("A parallel fracture-mechanics pathway cross-checking the S-N life. Conservative "
+                   "ECA: 1 mm postulated flaw, single membrane Y=1.12, no threshold benefit "
+                   "(high-R tensioned riser). Design ECA needs the full BS 7910 2-D a/c integration.")
 
 # ========================== ASSIMILATION =================================== #
 with tab_assim:
@@ -1866,6 +1992,32 @@ with tab_assim:
     st.plotly_chart(cdf_fig(post), width="stretch", config={"displayModeBar": False})
     st.caption("Cumulative distribution of the Monte-Carlo remaining-life posterior - read off the "
                "probability the life falls below any design target.")
+    if _rel is not None and _rel.get("enabled"):
+        st.markdown('<div class="eq">g = ln(L&#183;&#916;) &minus; ln(T),&nbsp; '
+                    '&#946; = (&#956;<sub>lnL</sub> &minus; ln T)/&#963;,&nbsp; '
+                    'P<sub>f</sub> = &#934;(&minus;&#946;) '
+                    '<span class="c"># FORM fatigue reliability (DNV-RP-C210)</span></div>',
+                    unsafe_allow_html=True)
+        _relpass = _rel["passes"]
+        st.markdown('<div class="sec" data-n="04">Structural reliability &middot; FORM index &beta; vs DNV '
+                    'safety class</div>', unsafe_allow_html=True)
+        st.markdown(kpi_row([
+            kpi("Reliability index β", f'{_rel["beta"]:.2f}', "", "sig" if _relpass else "alarm"),
+            kpi("Target β", f'{_rel["target_beta"]:.2f}', f'{_rel["safety_class"]}'),
+            kpi("Annual Pf", f'{_rel["pf_annual"]:.1e}'),
+            kpi("Target annual Pf", f'{_rel["target_pf"]:.0e}'),
+            kpi("Reliability check", "PASS" if _relpass else "FAIL", "", "sig" if _relpass else "alarm"),
+        ]), unsafe_allow_html=True)
+        rl1, rl2 = dcols([3, 2])
+        rl1.plotly_chart(reliability_fig(_rel), width="stretch", config={"displayModeBar": False})
+        with rl2:
+            st.markdown(kpi_row([
+                kpi("Mean-curve life", life(_rel["mean_curve_life_years"]), "yr"),
+                kpi("Design life", f'{_rel["design_life_years"]:.0f}', "yr"),
+            ]), unsafe_allow_html=True)
+            st.caption("β on the mean S-N basis (DNV-RP-C210); the deterministic DFF check keeps the "
+                       "characteristic curve. The importance factors show S-N scatter dominates the "
+                       "fatigue uncertainty. Set the safety class in the sidebar.")
     if _dfan is not None:
         st.markdown('<div class="sec" data-n="03">Accumulated-damage divergence &middot; design vs actual wave climate '
                     '(spec &sect;5 gate)</div>', unsafe_allow_html=True)
@@ -1943,6 +2095,8 @@ with tab_ledger:
         ("Combined wave+VIV life", f"{life(_comb_life)} yr", "Miner (wave + VIV)"),
         ("VIV-only life", f"{life(_viv['life_years'])} yr" if _viv and _viv.get('enabled') else "n/a", "DNV-RP-F204 screening"),
         ("DFF utilisation / acceptance", f"{_acc['utilisation']:.2f} -> {'PASS' if _acc['passes'] else 'FAIL'}" if _acc else "-", "DNV-OS-F201"),
+        ("Reliability index β / annual Pf", f"{_rel['beta']:.2f} / {_rel['pf_annual']:.1e} -> {'PASS' if _rel['passes'] else 'FAIL'}" if _rel and _rel.get('enabled') else "-", "DNV-RP-C210 FORM"),
+        ("Crack-based life (BS 7910 ECA)", f"{life(_crack['crack_life_years'])} yr" if _crack and _crack.get('enabled') else "-", "Paris-law"),
         ("Next inspection", f"{insp['next_inspection_year']:.1f} yr (target PoF {insp['target_pof']*100:.1f}%)", "RBI"),
         ("Net fleet value dC", f"{econ['fleet_delta_c_usd']/1e6:+.1f} US$M", "Eq. 11 discounted"),
         ("S-N class / environment", f"{cfg.riser.sn_class} / {dmg.get('sn_environment', 'in_air')}", "DNV-RP-C203"),

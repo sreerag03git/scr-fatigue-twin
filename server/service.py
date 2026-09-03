@@ -18,13 +18,25 @@ from scr_twin_core.montecarlo import (
     simulate_wave_climate_multipliers,
 )
 from scr_twin_core.config import AnalysisConfig
+from scr_twin_core.fracture import (
+    InitialFlawDistribution,
+    ParisMaterial,
+    crack_growth_curve,
+    crack_growth_mc,
+    crack_life_years,
+    equivalent_stress_range_mpa,
+    stress_intensity_range,
+)
 from scr_twin_core.inspection import (
     ConditionalEconomicsModel,
     fleet_economics_conditional,
     next_inspection,
+    pod_lognormal,
 )
 from scr_twin_core.miner import SECONDS_PER_YEAR
 from scr_twin_core.pipeline import FullResult, long_term_fatigue, run_full_analysis
+from scr_twin_core.reliability import form_fatigue_reliability
+from scr_twin_core.seabed import boundary_layer_length, seabed_sensitivity
 from scr_twin_core.sn import get_curve
 from scr_twin_core.scatter import ScatterDiagram, example_scatter_diagram, load_scatter_csv
 from scr_twin_core.viv import CurrentProfile, viv_screening
@@ -257,6 +269,97 @@ def _viv_payload(config: AnalysisConfig) -> dict[str, Any]:
     return payload
 
 
+def _seabed_payload(config: AnalysisConfig, result: FullResult) -> dict[str, Any]:
+    """Seabed-stiffness fatigue sensitivity about the (conservative) rigid base."""
+    section = config.riser.pipe_section()
+    catenary = config.riser.catenary()
+    ei = section.bending_stiffness
+    h = catenary.horizontal_tension
+    base_life = result.deterministic_life_years
+    if not np.isfinite(base_life) or base_life <= 0.0:
+        return {"enabled": False}
+    m = float(result.parameters.get("sn_slope_m", 3.0))
+    s = seabed_sensitivity(ei, h, base_life, sn_slope_m=m)
+    return {
+        "enabled": True,
+        "lambda_b": boundary_layer_length(ei, h),
+        "base_life_years": s.base_life_years,
+        "life_soft": s.life_soft,
+        "life_stiff": s.life_stiff,
+        "k_v_kpa": [float(k / 1e3) for k in s.k_v],
+        "correction": [float(v) for v in s.correction],
+        "life_years": [float(v) for v in s.life_years],
+    }
+
+
+def _reliability_payload(config: AnalysisConfig, result: FullResult) -> dict[str, Any]:
+    """FORM fatigue reliability: beta, annual Pf vs the DNV safety-class target."""
+    try:
+        r = form_fatigue_reliability(
+            result.monte_carlo.life_years, config.riser.design_service_life_years,
+            result.parameters, safety_class=config.riser.safety_class,
+        )
+    except ValueError:
+        return {"enabled": False}
+    return {"enabled": True, **r.as_dict()}
+
+
+def _crack_payload(config: AnalysisConfig, result: FullResult) -> dict[str, Any]:
+    """Paris-law crack-growth pathway (BS 7910) + POD-driven crack-based inspection."""
+    riser = config.riser
+    hist = result.rainflow_hist
+    edges = np.asarray(hist["edges"], dtype=float)
+    counts = np.asarray(hist["counts"], dtype=float)
+    block_s = float(result.time_domain_block.block_seconds)
+    total_cycles = float(counts.sum())
+    if total_cycles <= 0.0 or block_s <= 0.0:
+        return {"enabled": False}
+    m_paris = 3.0
+    cycles_per_year = total_cycles / block_s * SECONDS_PER_YEAR
+    dsig_eq = equivalent_stress_range_mpa(edges, counts, m_paris)  # hot-spot MPa
+    a0 = 1.0e-3                              # postulated initial defect (ECA), 1 mm
+    a_crit = float(riser.wall_thickness)     # through-wall breach
+    seawater = str(riser.sn_environment.value) == "seawater_cp"
+    _base = ParisMaterial.bs7910_marine_cp() if seawater else ParisMaterial.bs7910_air_mean()
+    # Conservative ECA: high riser tension -> high R-ratio -> take no threshold benefit.
+    mat = ParisMaterial(C=_base.C, m=_base.m, delta_k_th=0.0, name=_base.name + ", no-threshold ECA")
+    dk0 = float(stress_intensity_range(dsig_eq, a0))
+    propagates = dk0 >= mat.delta_k_th
+    life = crack_life_years(a0, a_crit, mat, dsig_eq, cycles_per_year) if propagates else float("inf")
+
+    horizon = 100.0 if not np.isfinite(life) else float(min(max(life * 1.3, 30.0), 400.0))
+    t, a = crack_growth_curve(a0, mat, dsig_eq, cycles_per_year, a_c=a_crit,
+                              years=horizon, n_steps=120)
+    a_grid = np.linspace(1e-4, a_crit, 60)
+    pod = pod_lognormal(a_grid, a50=2.0e-3, sigma=0.6)  # subsea MPI/ACFM-class
+    mc = crack_growth_mc(InitialFlawDistribution(), mat, dsig_eq, cycles_per_year,
+                         a_c=a_crit, n_members=4000, seed=config.seed)
+    finite = mc[np.isfinite(mc)]
+    frac_prop = float(np.mean(np.isfinite(mc)))
+    crack_insp: float | None = None
+    if finite.size >= 20:
+        plan = next_inspection(finite, target_pof=1e-2,
+                               horizon_year=float(max(60.0, np.percentile(finite, 90))))
+        crack_insp = plan.next_inspection_year
+
+    return {
+        "enabled": True,
+        "material": mat.name,
+        "equivalent_stress_range_mpa": dsig_eq,
+        "cycles_per_year": cycles_per_year,
+        "initial_flaw_mm": a0 * 1e3,
+        "critical_depth_mm": a_crit * 1e3,
+        "delta_k0": dk0,
+        "delta_k_threshold": mat.delta_k_th,
+        "propagates": propagates,
+        "crack_life_years": life,
+        "fraction_propagating": frac_prop,
+        "crack_inspection_year": crack_insp,
+        "a_of_t": {"years": [float(v) for v in t], "depth_mm": [float(v * 1e3) for v in a]},
+        "pod": {"size_mm": [float(v * 1e3) for v in a_grid], "prob": [float(v) for v in pod]},
+    }
+
+
 def _posterior_payload(result: FullResult) -> dict[str, Any]:
     mc = result.monte_carlo
     counts, edges = mc.histogram(48)
@@ -326,6 +429,9 @@ def analyze(
         "verification": _verification_payload(result),
         "divergence_fan": divergence_fan(result.parameters, seed=config.seed),
         "long_term": _long_term_payload(config, diagram, imported_tf),
+        "crack": _crack_payload(config, result),
+        "reliability": _reliability_payload(config, result),
+        "seabed": _seabed_payload(config, result),
         "viv": viv_block,
         "combined": {
             "wave_rate": wave_rate,

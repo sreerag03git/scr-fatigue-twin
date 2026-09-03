@@ -66,6 +66,23 @@ def test_analyze_synthetic_full_payload(config):
     # VIV screening (default current on) + combined wave+VIV life shorter than wave-only.
     assert p["viv"]["enabled"] is True
     assert len(p["viv"]["modes"]) >= 4 and p["viv"]["dominant_mode"] >= 1
+    # Fracture mechanics crack-growth pathway present with a(t) + POD curves.
+    cr = p["crack"]
+    assert cr["enabled"] is True
+    assert len(cr["a_of_t"]["years"]) == len(cr["a_of_t"]["depth_mm"]) >= 10
+    assert cr["a_of_t"]["depth_mm"][-1] >= cr["a_of_t"]["depth_mm"][0]  # crack grows
+    assert 0.0 <= cr["pod"]["prob"][-1] <= 1.0
+    # FORM reliability: beta, annual Pf, importance factors summing to 1.
+    rl = p["reliability"]
+    assert rl["enabled"] is True
+    assert rl["beta"] > 0.0 and 0.0 <= rl["pf_annual"] <= 1.0
+    assert abs(sum(rl["importance"].values()) - 1.0) < 1e-6
+    # Seabed sensitivity: a compliant seabed exceeds the conservative rigid base.
+    sb = p["seabed"]
+    assert sb["enabled"] is True
+    assert sb["life_soft"] > sb["life_stiff"] > sb["base_life_years"]
+    # SCF provenance breakdown present (default: no misalignment -> effective == detail).
+    assert p["provenance"]["effective_scf"] == pytest.approx(p["provenance"]["geometric_scf"])
     assert p["combined"]["life_years"] <= p["damage"]["deterministic_life_years"] + 1e-6
     assert p["combined"]["viv_rate"] >= 0.0
     assert p["posterior"]["p10"] < p["posterior"]["p50"] < p["posterior"]["p90"]
