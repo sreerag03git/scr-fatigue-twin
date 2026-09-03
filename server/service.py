@@ -36,6 +36,7 @@ from scr_twin_core.inspection import (
 from scr_twin_core.miner import SECONDS_PER_YEAR
 from scr_twin_core.pipeline import FullResult, long_term_fatigue, run_full_analysis
 from scr_twin_core.reliability import form_fatigue_reliability
+from scr_twin_core.seabed import boundary_layer_length, seabed_sensitivity
 from scr_twin_core.sn import get_curve
 from scr_twin_core.scatter import ScatterDiagram, example_scatter_diagram, load_scatter_csv
 from scr_twin_core.viv import CurrentProfile, viv_screening
@@ -268,6 +269,29 @@ def _viv_payload(config: AnalysisConfig) -> dict[str, Any]:
     return payload
 
 
+def _seabed_payload(config: AnalysisConfig, result: FullResult) -> dict[str, Any]:
+    """Seabed-stiffness fatigue sensitivity about the (conservative) rigid base."""
+    section = config.riser.pipe_section()
+    catenary = config.riser.catenary()
+    ei = section.bending_stiffness
+    h = catenary.horizontal_tension
+    base_life = result.deterministic_life_years
+    if not np.isfinite(base_life) or base_life <= 0.0:
+        return {"enabled": False}
+    m = float(result.parameters.get("sn_slope_m", 3.0))
+    s = seabed_sensitivity(ei, h, base_life, sn_slope_m=m)
+    return {
+        "enabled": True,
+        "lambda_b": boundary_layer_length(ei, h),
+        "base_life_years": s.base_life_years,
+        "life_soft": s.life_soft,
+        "life_stiff": s.life_stiff,
+        "k_v_kpa": [float(k / 1e3) for k in s.k_v],
+        "correction": [float(v) for v in s.correction],
+        "life_years": [float(v) for v in s.life_years],
+    }
+
+
 def _reliability_payload(config: AnalysisConfig, result: FullResult) -> dict[str, Any]:
     """FORM fatigue reliability: beta, annual Pf vs the DNV safety-class target."""
     try:
@@ -407,6 +431,7 @@ def analyze(
         "long_term": _long_term_payload(config, diagram, imported_tf),
         "crack": _crack_payload(config, result),
         "reliability": _reliability_payload(config, result),
+        "seabed": _seabed_payload(config, result),
         "viv": viv_block,
         "combined": {
             "wave_rate": wave_rate,

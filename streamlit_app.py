@@ -1036,6 +1036,18 @@ def riser_tension_fig(cat: dict, w: float) -> go.Figure:
     return f
 
 
+def seabed_fig(sb: dict) -> go.Figure:
+    """Fatigue life vs seabed vertical stiffness (rigid base = conservative)."""
+    f = _fig(240)
+    f.add_scatter(x=sb["k_v_kpa"], y=sb["life_years"], line=dict(color=SIGNAL2, width=2.4),
+                  fill="tozeroy", fillcolor="rgba(11,125,132,0.06)")
+    f.add_hline(y=sb["base_life_years"], line=dict(color=ALARM, width=1, dash="dash"),
+                annotation_text="rigid seabed (base)", annotation_font_size=9, annotation_font_color=ALARM)
+    f.update_layout(xaxis=dict(title="seabed stiffness k_v [kPa]", type="log", gridcolor=GRID, zeroline=False),
+                    yaxis=dict(title="fatigue life [yr]", gridcolor=GRID, zeroline=False, rangemode="tozero"))
+    return f
+
+
 def reliability_fig(rel: dict) -> go.Figure:
     """FORM importance factors (alpha^2) - which uncertainty source drives Pf."""
     items = sorted(rel["importance"].items(), key=lambda kv: kv[1], reverse=True)
@@ -1593,6 +1605,7 @@ _viv = payload.get("viv")
 _comb = payload.get("combined")
 _crack = payload.get("crack")
 _rel = payload.get("reliability")
+_seabed = payload.get("seabed")
 _dfan = payload.get("divergence_fan")
 _comb_life = _comb["life_years"] if _comb else dmg["deterministic_life_years"]
 
@@ -1711,6 +1724,29 @@ with tab_struct:
                 [[str(m["mode"]), f"{m['frequency_hz']:.3f}", f"{m['reduced_velocity']:.1f}",
                   f"{m['a_over_d']:.2f}", f"{m['stress_range_mpa']:.1f}", f"{m['annual_damage_rate']:.2e}"]
                  for m in _exc[:10]], value_cols=(1, 2, 3, 4, 5)), unsafe_allow_html=True)
+    if _seabed is not None and _seabed.get("enabled"):
+        st.markdown('<div class="eq">&#955;<sub>b</sub> = &#8730;(EI/H),&nbsp; '
+                    'l<sub>s</sub> = (4EI/k<sub>v</sub>)<sup>1/4</sup>,&nbsp; '
+                    'C<sub>s</sub> = &#955;<sub>b</sub>/(&#955;<sub>b</sub>+l<sub>s</sub>) '
+                    '<span class="c"># Pesce/Lenci TDP boundary-layer correction</span></div>',
+                    unsafe_allow_html=True)
+        st.markdown('<div class="sec" data-n="07">Seabed-stiffness sensitivity &middot; touchdown interaction '
+                    '<span class="tag amber">rigid base is conservative</span></div>', unsafe_allow_html=True)
+        sb1, sb2 = dcols([3, 2])
+        sb1.plotly_chart(seabed_fig(_seabed), width="stretch", config={"displayModeBar": False})
+        with sb2:
+            st.markdown(kpi_row([
+                kpi("Rigid-seabed life (base)", life(_seabed["base_life_years"]), "yr", "alarm"),
+                kpi("Bending layer λ_b", f'{_seabed["lambda_b"]:.1f}', "m"),
+            ]), unsafe_allow_html=True)
+            st.markdown(kpi_row([
+                kpi("Soft-clay life", life(_seabed["life_soft"]), "yr", "sig"),
+                kpi("Stiff-sand life", life(_seabed["life_stiff"]), "yr"),
+            ]), unsafe_allow_html=True)
+            st.caption("A compliant seabed distributes the TDP curvature (Cs<1), so the rigid-seabed "
+                       "life is a conservative lower bound - the band shows the soft-to-stiff span. "
+                       "TDP fatigue is very sensitive to seabed modelling; a project value of k_v "
+                       "(or a nonlinear soil model) narrows it.")
 
 # ========================== ENVIRONMENT ==================================== #
 with tab_env:
