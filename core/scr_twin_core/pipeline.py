@@ -64,6 +64,9 @@ class Provenance(BaseModel):
     mean_stress_model: str = "none"
     mean_stress_applied: bool = False
     static_mean_stress_pa: float = 0.0
+    geometric_scf: float = 1.0
+    misalignment_scf: float = 1.0
+    effective_scf: float = 1.0
 
 
 @dataclass(frozen=True)
@@ -166,6 +169,7 @@ def run_full_analysis(
 
     riser = config.riser
     section = riser.pipe_section()
+    scf_eff = riser.effective_scf()  # detail SCF x DNV-App.3 misalignment SCF
     catenary = riser.catenary()
     base_curve = get_curve(riser.sn_class, riser.sn_environment)
     correction = config.environment.correction()
@@ -225,7 +229,7 @@ def run_full_analysis(
     tf_time: TransferFunction = build_tf(fft_freqs)
 
     # --- Layer 2: time-domain stress -> rainflow -> Miner ---
-    stress = stress_history_from_motion(x, fs, tf_time, section, scf=riser.scf)
+    stress = stress_history_from_motion(x, fs, tf_time, section, scf=scf_eff)
     cycles = count_cycles(stress)
     duration = x.size / fs
 
@@ -260,7 +264,7 @@ def run_full_analysis(
 
     # --- Spectral pathway (Dirlik against the two-slope curve) as a cross-check ---
     tf_spec = build_tf(f_w)
-    stress_psd = stress_psd_from_motion_psd(pxx, tf_spec, section, scf=riser.scf)
+    stress_psd = stress_psd_from_motion_psd(pxx, tf_spec, section, scf=scf_eff)
     moments = spectral_moments(f_w, stress_psd, (0, 1, 2, 4))
     if moments[0] > 0.0 and moments[2] > 0.0 and moments[4] > 0.0:
         dirlik_per_s = dirlik_damage_rate_curve(
@@ -297,7 +301,7 @@ def run_full_analysis(
     hf_freqs = np.linspace(0.02, 0.40, 200)
     tf_hf = build_tf(hf_freqs)
     hf_moment_mag = tf_hf.magnitude
-    hf_stress_mag = hf_moment_mag * riser.scf / section.section_modulus / 1.0e6
+    hf_stress_mag = hf_moment_mag * scf_eff / section.section_modulus / 1.0e6
     hf_phase = tf_hf.phase
 
     # --- Layer 3: Monte Carlo remaining-life posterior ---
@@ -324,6 +328,9 @@ def run_full_analysis(
         mean_stress_model=str(resolved_mean_model.value),
         mean_stress_applied=mean_stress_applied,
         static_mean_stress_pa=float(static_mean if mean_stress_applied else 0.0),
+        geometric_scf=float(riser.scf),
+        misalignment_scf=float(riser.misalignment_scf()),
+        effective_scf=float(scf_eff),
     )
 
     return FullResult(
@@ -376,6 +383,7 @@ def sea_state_annual_damage_rate(
     """
     riser = config.riser
     section = riser.pipe_section()
+    scf_eff = riser.effective_scf()
     catenary = riser.catenary()
     correction = config.environment.correction()
     curve, _ = _corrected_curve(get_curve(riser.sn_class, riser.sn_environment), correction)
@@ -401,7 +409,7 @@ def sea_state_annual_damage_rate(
 
     s_wave = jonswap(f, hs, tp, gamma=gamma, normalize=True)
     motion_psd = np.asarray(rao(f), dtype=np.float64) ** 2 * s_wave
-    stress_psd = stress_psd_from_motion_psd(motion_psd, tf, section, scf=riser.scf)
+    stress_psd = stress_psd_from_motion_psd(motion_psd, tf, section, scf=scf_eff)
     moments = spectral_moments(f, stress_psd, (0, 1, 2, 4))
     if not (moments[0] > 0.0 and moments[2] > 0.0 and moments[4] > 0.0):
         return 0.0

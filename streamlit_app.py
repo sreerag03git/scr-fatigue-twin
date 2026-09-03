@@ -1328,7 +1328,9 @@ with st.sidebar.expander("Steel catenary riser", expanded=True):
     wt = st.number_input("Wall thickness [m]", 0.005, 0.08, ref.wall_thickness, 0.001, format="%.4f")
     depth = st.number_input("Water depth [m]", 100.0, 3500.0, ref.water_depth, 50.0)
     ang = st.number_input("Hang-off [deg from vertical]", 1.0, 45.0, ref.hang_off_angle_deg, 1.0)
-    scf = st.number_input("SCF", 1.0, 5.0, ref.scf, 0.05)
+    scf = st.number_input("Detail SCF", 1.0, 5.0, ref.scf, 0.05)
+    hi_lo_mm = st.number_input("Girth-weld hi-lo misalignment [mm]", 0.0, 5.0, 0.0, 0.5,
+                               help="DNV-RP-C203 App.3: adds a physics-derived SCF to the detail SCF.")
     sn_class = st.selectbox("DNV S-N class", SN_CLASSES, index=SN_CLASSES.index(ref.sn_class))
     _sn_env_label = st.selectbox(
         "S-N environment", ["in air (Table 2-1)", "seawater w/ CP (Table 2-2)"], index=0,
@@ -1405,7 +1407,7 @@ try:
     cfg = AnalysisConfig(
         riser=RiserConfig(
             outer_diameter=od, wall_thickness=wt, water_depth=depth,
-            hang_off_angle_deg=ang, scf=scf, sn_class=sn_class,
+            hang_off_angle_deg=ang, scf=scf, hi_lo_misalignment=hi_lo_mm / 1e3, sn_class=sn_class,
             sn_environment=sn_env, design_fatigue_factor=dff,
             design_service_life_years=design_life, safety_class=safety_class,
             mean_stress_model=ms_model, as_welded=as_welded,
@@ -1821,6 +1823,17 @@ with tab_sense:
     if not _tf["is_validated"]:
         st.caption("Import a validated OrcaFlex/RIFLEX/DeepLines H(f) (sidebar) for a "
                    "project-grade TDP stress transfer; the magnitude AND phase are both applied.")
+    st.markdown('<div class="sec">Hot-spot SCF &middot; detail &times; misalignment (DNV-RP-C203 App.3)</div>',
+                unsafe_allow_html=True)
+    st.markdown(kpi_row([
+        kpi("Detail (geometric) SCF", f'{prov.get("geometric_scf", cfg.riser.scf):.3f}'),
+        kpi("Misalignment SCF", f'{prov.get("misalignment_scf", 1.0):.3f}',
+            "", "amber" if prov.get("misalignment_scf", 1.0) > 1.001 else ""),
+        kpi("Hi-lo eccentricity", f'{cfg.riser.hi_lo_misalignment*1e3:.1f}', "mm"),
+        kpi("Effective hot-spot SCF", f'{prov.get("effective_scf", cfg.riser.scf):.3f}', "", "sig"),
+    ]), unsafe_allow_html=True)
+    st.caption("SCF_eff = detail SCF x [1 + 3(δ_m/t)·exp(−√(t/D))] - the hi-lo misalignment part is "
+               "derived from the fabrication tolerance, not assumed.")
     _dh = payload.get("data_health")
     if _dh:
         st.markdown('<div class="sec">Data-health checks (ingest gate)</div>', unsafe_allow_html=True)

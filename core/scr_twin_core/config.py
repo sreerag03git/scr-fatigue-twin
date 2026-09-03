@@ -25,6 +25,7 @@ from .environment import (
     EnvironmentCorrection,
 )
 from .hang_off_kinematics import PorchGeometry
+from .scf import effective_scf, misalignment_scf
 from .section import PipeSection, submerged_weight
 from .sn import DNV_C203_IN_AIR, MeanStressModel, SNEnvironment
 
@@ -56,7 +57,11 @@ class RiserConfig(BaseModel):
         gt=0.0, lt=89.0, description="Departure angle from vertical [deg]"
     )
 
-    scf: float = Field(default=1.0, ge=1.0, le=10.0, description="Stress concentration factor")
+    scf: float = Field(default=1.0, ge=1.0, le=10.0, description="Detail (geometric) stress concentration factor")
+    hi_lo_misalignment: float = Field(
+        default=0.0, ge=0.0, le=0.05,
+        description="Girth-weld hi-lo axial misalignment (eccentricity) [m]; adds a DNV App.3 SCF",
+    )
     sn_class: SNClassName = Field(default="F1", description="DNV-RP-C203 S-N class")
     sn_environment: SNEnvironment = Field(
         default=SNEnvironment.IN_AIR,
@@ -105,6 +110,14 @@ class RiserConfig(BaseModel):
     @property
     def thickness_for_correction(self) -> float:
         return self.weld_thickness if self.weld_thickness is not None else self.wall_thickness
+
+    def misalignment_scf(self) -> float:
+        """DNV-RP-C203 App.3 hi-lo misalignment SCF (1.0 when no misalignment)."""
+        return misalignment_scf(self.hi_lo_misalignment, self.wall_thickness, self.outer_diameter)
+
+    def effective_scf(self) -> float:
+        """Effective hot-spot SCF = detail SCF x misalignment SCF."""
+        return effective_scf(self.scf, self.hi_lo_misalignment, self.wall_thickness, self.outer_diameter)
 
     def pipe_section(self) -> PipeSection:
         return PipeSection(
