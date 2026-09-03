@@ -35,6 +35,7 @@ from scr_twin_core.inspection import (
 )
 from scr_twin_core.miner import SECONDS_PER_YEAR
 from scr_twin_core.pipeline import FullResult, long_term_fatigue, run_full_analysis
+from scr_twin_core.reliability import form_fatigue_reliability
 from scr_twin_core.sn import get_curve
 from scr_twin_core.scatter import ScatterDiagram, example_scatter_diagram, load_scatter_csv
 from scr_twin_core.viv import CurrentProfile, viv_screening
@@ -267,6 +268,18 @@ def _viv_payload(config: AnalysisConfig) -> dict[str, Any]:
     return payload
 
 
+def _reliability_payload(config: AnalysisConfig, result: FullResult) -> dict[str, Any]:
+    """FORM fatigue reliability: beta, annual Pf vs the DNV safety-class target."""
+    try:
+        r = form_fatigue_reliability(
+            result.monte_carlo.life_years, config.riser.design_service_life_years,
+            result.parameters, safety_class=config.riser.safety_class,
+        )
+    except ValueError:
+        return {"enabled": False}
+    return {"enabled": True, **r.as_dict()}
+
+
 def _crack_payload(config: AnalysisConfig, result: FullResult) -> dict[str, Any]:
     """Paris-law crack-growth pathway (BS 7910) + POD-driven crack-based inspection."""
     riser = config.riser
@@ -393,6 +406,7 @@ def analyze(
         "divergence_fan": divergence_fan(result.parameters, seed=config.seed),
         "long_term": _long_term_payload(config, diagram, imported_tf),
         "crack": _crack_payload(config, result),
+        "reliability": _reliability_payload(config, result),
         "viv": viv_block,
         "combined": {
             "wave_rate": wave_rate,

@@ -69,6 +69,9 @@ class RiserConfig(BaseModel):
     design_service_life_years: float = Field(
         default=25.0, gt=0.0, le=100.0, description="Required service life for the DFF check [yr]",
     )
+    safety_class: Literal["low", "normal", "high"] = Field(
+        default="normal", description="DNV safety class for the reliability target Pf (RP-C210)",
+    )
     weld_thickness: float | None = Field(
         default=None, gt=0.0, description="Thickness for the (t/t_ref)^k correction [m]; defaults to wall_thickness"
     )

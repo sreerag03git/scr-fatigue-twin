@@ -1036,6 +1036,22 @@ def riser_tension_fig(cat: dict, w: float) -> go.Figure:
     return f
 
 
+def reliability_fig(rel: dict) -> go.Figure:
+    """FORM importance factors (alpha^2) - which uncertainty source drives Pf."""
+    items = sorted(rel["importance"].items(), key=lambda kv: kv[1], reverse=True)
+    names = [k for k, _ in items]
+    vals = [100.0 * v for _, v in items]
+    colors = [SIGNAL2 if v == max(vals) else "#9db4bb" for v in vals]
+    f = _fig(240)
+    f.add_bar(y=names, x=vals, orientation="h", marker_color=colors,
+              text=[f"{v:.0f}%" for v in vals], textposition="outside", cliponaxis=False)
+    f.update_layout(
+        xaxis=dict(title="importance α² [% of ln-life variance]", gridcolor=GRID, zeroline=False,
+                   range=[0, max(vals) * 1.25 if vals else 1.0]),
+        yaxis=dict(autorange="reversed"), margin=dict(l=90, r=30, t=10, b=40))
+    return f
+
+
 def crack_growth_ui_fig(crack: dict) -> go.Figure:
     """Paris-law crack depth a(t) vs year, with the critical depth and inspection."""
     at = crack["a_of_t"]
@@ -1325,6 +1341,8 @@ with st.sidebar.expander("Acceptance & mean stress"):
     dff = st.number_input("Design Fatigue Factor (DFF)", 1.0, 10.0, 3.0, 1.0,
                           help="DNV-OS-F201: predicted life must exceed DFF x design service life.")
     design_life = st.number_input("Design service life [yr]", 5.0, 60.0, 25.0, 5.0)
+    safety_class = st.selectbox("Safety class (reliability target)", ["low", "normal", "high"], index=1,
+                                help="DNV-RP-C210 target annual Pf: low 1e-3, normal 1e-4, high 1e-5.")
     _ms_label = st.selectbox("Mean-stress model", ["none", "goodman", "gerber", "swt"], index=0,
                              help="Rides on the static axial tension mean (T_TDP/A_steel).")
     ms_model = MeanStressModel(_ms_label)
@@ -1389,7 +1407,7 @@ try:
             outer_diameter=od, wall_thickness=wt, water_depth=depth,
             hang_off_angle_deg=ang, scf=scf, sn_class=sn_class,
             sn_environment=sn_env, design_fatigue_factor=dff,
-            design_service_life_years=design_life,
+            design_service_life_years=design_life, safety_class=safety_class,
             mean_stress_model=ms_model, as_welded=as_welded,
             contents_density=ref.contents_density, coating_thickness=ref.coating_thickness,
             coating_density=ref.coating_density, is_reference_preset=False,
@@ -1572,6 +1590,7 @@ _lt = payload.get("long_term")
 _viv = payload.get("viv")
 _comb = payload.get("combined")
 _crack = payload.get("crack")
+_rel = payload.get("reliability")
 _dfan = payload.get("divergence_fan")
 _comb_life = _comb["life_years"] if _comb else dmg["deterministic_life_years"]
 
@@ -1924,6 +1943,32 @@ with tab_assim:
     st.plotly_chart(cdf_fig(post), width="stretch", config={"displayModeBar": False})
     st.caption("Cumulative distribution of the Monte-Carlo remaining-life posterior - read off the "
                "probability the life falls below any design target.")
+    if _rel is not None and _rel.get("enabled"):
+        st.markdown('<div class="eq">g = ln(L&#183;&#916;) &minus; ln(T),&nbsp; '
+                    '&#946; = (&#956;<sub>lnL</sub> &minus; ln T)/&#963;,&nbsp; '
+                    'P<sub>f</sub> = &#934;(&minus;&#946;) '
+                    '<span class="c"># FORM fatigue reliability (DNV-RP-C210)</span></div>',
+                    unsafe_allow_html=True)
+        _relpass = _rel["passes"]
+        st.markdown('<div class="sec" data-n="04">Structural reliability &middot; FORM index &beta; vs DNV '
+                    'safety class</div>', unsafe_allow_html=True)
+        st.markdown(kpi_row([
+            kpi("Reliability index β", f'{_rel["beta"]:.2f}', "", "sig" if _relpass else "alarm"),
+            kpi("Target β", f'{_rel["target_beta"]:.2f}', f'{_rel["safety_class"]}'),
+            kpi("Annual Pf", f'{_rel["pf_annual"]:.1e}'),
+            kpi("Target annual Pf", f'{_rel["target_pf"]:.0e}'),
+            kpi("Reliability check", "PASS" if _relpass else "FAIL", "", "sig" if _relpass else "alarm"),
+        ]), unsafe_allow_html=True)
+        rl1, rl2 = dcols([3, 2])
+        rl1.plotly_chart(reliability_fig(_rel), width="stretch", config={"displayModeBar": False})
+        with rl2:
+            st.markdown(kpi_row([
+                kpi("Mean-curve life", life(_rel["mean_curve_life_years"]), "yr"),
+                kpi("Design life", f'{_rel["design_life_years"]:.0f}', "yr"),
+            ]), unsafe_allow_html=True)
+            st.caption("β on the mean S-N basis (DNV-RP-C210); the deterministic DFF check keeps the "
+                       "characteristic curve. The importance factors show S-N scatter dominates the "
+                       "fatigue uncertainty. Set the safety class in the sidebar.")
     if _dfan is not None:
         st.markdown('<div class="sec" data-n="03">Accumulated-damage divergence &middot; design vs actual wave climate '
                     '(spec &sect;5 gate)</div>', unsafe_allow_html=True)
@@ -2001,6 +2046,8 @@ with tab_ledger:
         ("Combined wave+VIV life", f"{life(_comb_life)} yr", "Miner (wave + VIV)"),
         ("VIV-only life", f"{life(_viv['life_years'])} yr" if _viv and _viv.get('enabled') else "n/a", "DNV-RP-F204 screening"),
         ("DFF utilisation / acceptance", f"{_acc['utilisation']:.2f} -> {'PASS' if _acc['passes'] else 'FAIL'}" if _acc else "-", "DNV-OS-F201"),
+        ("Reliability index β / annual Pf", f"{_rel['beta']:.2f} / {_rel['pf_annual']:.1e} -> {'PASS' if _rel['passes'] else 'FAIL'}" if _rel and _rel.get('enabled') else "-", "DNV-RP-C210 FORM"),
+        ("Crack-based life (BS 7910 ECA)", f"{life(_crack['crack_life_years'])} yr" if _crack and _crack.get('enabled') else "-", "Paris-law"),
         ("Next inspection", f"{insp['next_inspection_year']:.1f} yr (target PoF {insp['target_pof']*100:.1f}%)", "RBI"),
         ("Net fleet value dC", f"{econ['fleet_delta_c_usd']/1e6:+.1f} US$M", "Eq. 11 discounted"),
         ("S-N class / environment", f"{cfg.riser.sn_class} / {dmg.get('sn_environment', 'in_air')}", "DNV-RP-C203"),

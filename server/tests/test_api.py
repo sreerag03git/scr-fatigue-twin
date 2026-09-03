@@ -72,6 +72,11 @@ def test_analyze_synthetic_full_payload(config):
     assert len(cr["a_of_t"]["years"]) == len(cr["a_of_t"]["depth_mm"]) >= 10
     assert cr["a_of_t"]["depth_mm"][-1] >= cr["a_of_t"]["depth_mm"][0]  # crack grows
     assert 0.0 <= cr["pod"]["prob"][-1] <= 1.0
+    # FORM reliability: beta, annual Pf, importance factors summing to 1.
+    rl = p["reliability"]
+    assert rl["enabled"] is True
+    assert rl["beta"] > 0.0 and 0.0 <= rl["pf_annual"] <= 1.0
+    assert abs(sum(rl["importance"].values()) - 1.0) < 1e-6
     assert p["combined"]["life_years"] <= p["damage"]["deterministic_life_years"] + 1e-6
     assert p["combined"]["viv_rate"] >= 0.0
     assert p["posterior"]["p10"] < p["posterior"]["p50"] < p["posterior"]["p90"]
