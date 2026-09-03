@@ -1036,6 +1036,37 @@ def riser_tension_fig(cat: dict, w: float) -> go.Figure:
     return f
 
 
+def crack_growth_ui_fig(crack: dict) -> go.Figure:
+    """Paris-law crack depth a(t) vs year, with the critical depth and inspection."""
+    at = crack["a_of_t"]
+    f = _fig(240)
+    f.add_scatter(x=at["years"], y=at["depth_mm"], line=dict(color=ALARM, width=2.4),
+                  fill="tozeroy", fillcolor="rgba(192,67,47,0.07)", name="a(t)")
+    f.add_hline(y=crack["critical_depth_mm"], line=dict(color=ALARM, width=1, dash="dash"),
+                annotation_text="critical (through-wall)", annotation_font_size=9,
+                annotation_font_color=ALARM)
+    ci = crack.get("crack_inspection_year")
+    if ci is not None:
+        f.add_vline(x=ci, line=dict(color=SIGNAL2, width=1.2, dash="dot"),
+                    annotation_text="inspect", annotation_font_size=9, annotation_font_color=SIGNAL2)
+    f.update_layout(xaxis=dict(title="year", gridcolor=GRID, zeroline=False),
+                    yaxis=dict(title="crack depth a [mm]", gridcolor=GRID, zeroline=False, rangemode="tozero"))
+    return f
+
+
+def pod_crack_fig(crack: dict) -> go.Figure:
+    """Probability of detection vs crack size (subsea NDE)."""
+    pod = crack["pod"]
+    f = _fig(240)
+    f.add_scatter(x=pod["size_mm"], y=pod["prob"], line=dict(color=SIGNAL2, width=2.2),
+                  fill="tozeroy", fillcolor="rgba(11,125,132,0.06)")
+    f.add_hline(y=0.9, line=dict(color=AMBER, width=1, dash="dash"),
+                annotation_text="90% POD", annotation_font_size=9, annotation_font_color=AMBER)
+    f.update_layout(xaxis=dict(title="crack size [mm]", gridcolor=GRID, zeroline=False),
+                    yaxis=dict(title="probability of detection", gridcolor=GRID, zeroline=False, range=[0, 1]))
+    return f
+
+
 # --------------------------------------------------------------------------- #
 # PDF report (matplotlib charts + fpdf2; ASCII text for the core fonts)
 # --------------------------------------------------------------------------- #
@@ -1540,6 +1571,7 @@ _ver = payload.get("verification")
 _lt = payload.get("long_term")
 _viv = payload.get("viv")
 _comb = payload.get("combined")
+_crack = payload.get("crack")
 _dfan = payload.get("divergence_fan")
 _comb_life = _comb["life_years"] if _comb else dmg["deterministic_life_years"]
 
@@ -1839,6 +1871,32 @@ with tab_detect:
                  for m in _excd[:10]], value_cols=(1, 2, 3, 4, 5)), unsafe_allow_html=True)
         st.caption("Combined life adds the wave and VIV damage rates by Miner. VIV is a Griffin "
                    "A/D lock-in upper bound - design-grade VIV needs Shear7 / VIVANA.")
+    if _crack is not None and _crack.get("enabled"):
+        st.markdown('<div class="eq">da/dN = C(&#916;K)<sup>m</sup>,&nbsp; '
+                    '&#916;K = Y&#183;&#916;&#963;&#183;&#8730;(&#960;a) '
+                    '<span class="c"># BS 7910 Paris-law crack growth (parallel to S-N)</span></div>',
+                    unsafe_allow_html=True)
+        st.markdown('<div class="sec" data-n="07">Fracture mechanics &middot; Paris-law crack growth '
+                    '(BS 7910) <span class="tag amber">conservative ECA</span></div>', unsafe_allow_html=True)
+        fr1, fr2 = dcols([1, 1])
+        fr1.plotly_chart(crack_growth_ui_fig(_crack), width="stretch", config={"displayModeBar": False})
+        fr1.caption(f"A {_crack['initial_flaw_mm']:.1f} mm postulated flaw grown under the equivalent "
+                    f"stress range ({_crack['equivalent_stress_range_mpa']:.1f} MPa) to the "
+                    f"{_crack['critical_depth_mm']:.1f} mm wall.")
+        fr2.plotly_chart(pod_crack_fig(_crack), width="stretch", config={"displayModeBar": False})
+        fr2.caption("Probability of detection vs crack size (subsea MPI/ACFM-class) - the basis for "
+                    "crack-based inspection timing.")
+        _cl = _crack["crack_life_years"]
+        st.markdown(kpi_row([
+            kpi("Crack-based life", life(_cl), "yr", "amber"),
+            kpi("S-N deterministic life", life(dmg["deterministic_life_years"]), "yr", "sig"),
+            kpi("Equivalent Δσ", f'{_crack["equivalent_stress_range_mpa"]:.1f}', "MPa"),
+            kpi("Crack inspection", f'{_crack["crack_inspection_year"]:.1f}' if _crack.get("crack_inspection_year") else "-", "yr", "sig"),
+            kpi("Material law", _crack["material"].split(",")[0]),
+        ]), unsafe_allow_html=True)
+        st.caption("A parallel fracture-mechanics pathway cross-checking the S-N life. Conservative "
+                   "ECA: 1 mm postulated flaw, single membrane Y=1.12, no threshold benefit "
+                   "(high-R tensioned riser). Design ECA needs the full BS 7910 2-D a/c integration.")
 
 # ========================== ASSIMILATION =================================== #
 with tab_assim:
