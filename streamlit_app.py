@@ -1167,6 +1167,8 @@ def system_cutaway_svg(payload: dict) -> str:
         '<stop offset="0.6" stop-color="#ffffff" stop-opacity="0"/></radialGradient>'
         '<filter id="cutsoft"><feGaussianBlur stdDeviation="3"/></filter>'
         '<filter id="cutray"><feGaussianBlur stdDeviation="6"/></filter>'
+        '<marker id="cutflow" markerWidth="7" markerHeight="7" refX="5" refY="3" orient="auto"><path d="M0,0 L6,3 L0,6 Z" fill="#3fa9ff"/></marker>'
+        '<marker id="cutflowu" markerWidth="7" markerHeight="7" refX="5" refY="3" orient="auto"><path d="M0,0 L6,3 L0,6 Z" fill="#e8a33a"/></marker>'
         '<pattern id="cutstip" width="10" height="10" patternUnits="userSpaceOnUse">'
         '<circle cx="2" cy="3" r="0.7" fill="#5c4f2c" opacity="0.5"/>'
         '<circle cx="7" cy="7" r="0.7" fill="#5c4f2c" opacity="0.4"/></pattern>'
@@ -1253,16 +1255,70 @@ def system_cutaway_svg(payload: dict) -> str:
     p.append(f'<circle cx="{tdp[0]:.1f}" cy="{tdp[1]:.1f}" r="16" fill="#e8a33a" opacity="0.18" filter="url(#cutsoft)"/>')
     p.append(f'<circle cx="{tdp[0]:.1f}" cy="{tdp[1]:.1f}" r="5.5" fill="none" stroke="#f2c66b" stroke-width="2"/>')
 
+    # ---- real-life engineering annotations (Buberg et al. conventions) ----
+    def varrow(x, y1, y2, col, w=1.8):
+        return (f'<line x1="{x:.1f}" y1="{y1:.1f}" x2="{x:.1f}" y2="{y2:.1f}" stroke="{col}" stroke-width="{w}"/>'
+                f'<path d="M{x:.1f},{y1:.1f} l-4,7 l8,0 Z" fill="{col}"/>'
+                f'<path d="M{x:.1f},{y2:.1f} l-4,-7 l8,0 Z" fill="{col}"/>')
+    hvx = fwd + 24
+    p.append(varrow(hvx, surf_y - 58, surf_y + 8, "#b23b3b"))
+    p.append(chip(hvx + 8, surf_y - 44, "Heave motion"))
+    p.append(chip(VBW * 0.42, surf_y - 8, "Wave"))
+    # hang-off point + theta_HP from the vertical
+    p.append(f'<line x1="{cx:.1f}" y1="{keel_y:.1f}" x2="{cx:.1f}" y2="{keel_y + 0.26 * dh:.1f}" '
+             f'stroke="#12242b" stroke-width="1" stroke-dasharray="6 4"/>')
+    _t0, _t1 = rp[-1], rp[max(0, len(rp) - 5)]
+    _tang = math.atan2(_t1[1] - _t0[1], _t1[0] - _t0[0])
+    _ra = 0.14 * dh
+    p.append(f'<path d="M{cx:.1f},{keel_y + _ra:.1f} A{_ra:.1f},{_ra:.1f} 0 0 0 '
+             f'{cx + _ra * math.cos(_tang):.1f},{keel_y + _ra * math.sin(_tang):.1f}" '
+             f'fill="none" stroke="#e8a33a" stroke-width="1.6"/>')
+    p.append(chip(cx + _ra * 0.8, keel_y + _ra * 0.9, "&#952;<tspan baseline-shift=\"sub\" font-size=\"9\">HP</tspan>", light=True))
+    p.append(chip(cx + 12, keel_y - 4, "Hang-Off Point (HOP)", light=True))
+    _ai = int(len(rp) * 0.72)
+    p.append(chip(rp[_ai][0] + 10, rp[_ai][1], "Arc Length (AL)", light=True))
+    # VIV callout: internal flow / time-varying external flow / vortex
+    _mi = int(len(rp) * 0.42)
+    _ex, _ey = rp[_mi][0] + 0.26 * dw, rp[_mi][1]
+    _erx, _ery = 0.12 * dw, 0.075 * dh
+    p.append(f'<line x1="{rp[_mi][0]:.1f}" y1="{rp[_mi][1]:.1f}" x2="{_ex - _erx:.1f}" y2="{_ey:.1f}" '
+             f'stroke="#eef7f8" stroke-width="1" opacity="0.7"/>')
+    p.append(f'<ellipse cx="{_ex:.1f}" cy="{_ey:.1f}" rx="{_erx:.1f}" ry="{_ery:.1f}" '
+             f'fill="#0c353d" opacity="0.16" stroke="#cfeef0" stroke-width="1"/>')
+    for _k in range(3):
+        _ay = _ey - _ery * 0.42 + _k * _ery * 0.42
+        p.append(f'<line x1="{_ex - _erx * 0.7:.1f}" y1="{_ay:.1f}" x2="{_ex - _erx * 0.05:.1f}" y2="{_ay:.1f}" '
+                 f'stroke="#3fa9ff" stroke-width="1.6" marker-end="url(#cutflow)"/>')
+    p.append(f'<line x1="{_ex + _erx * 0.15:.1f}" y1="{_ey + _ery * 0.55:.1f}" x2="{_ex + _erx * 0.15:.1f}" '
+             f'y2="{_ey - _ery * 0.55:.1f}" stroke="#e8a33a" stroke-width="1.6" marker-end="url(#cutflowu)"/>')
+    p.append(f'<path d="M{_ex + _erx * 0.5:.1f},{_ey + 2:.1f} a5,5 0 1 1 -3,-4" fill="none" stroke="#cfeef0" stroke-width="1.4"/>')
+    p.append(chip(_ex, _ey - _ery - 6, "Time-varying external flow", light=True, anchor="middle"))
+    p.append(chip(_ex - _erx * 0.6, _ey + _ery + 13, "internal flow", light=True))
+    p.append(chip(_ex + _erx * 0.5, _ey + 4, "vortex", light=True))
+    # coordinate axes O-X-Y-Z at the seabed
+    _axx, _axy = tdp[0] + 0.16 * dw, bed_y - 8
+    p.append(f'<line x1="{_axx:.1f}" y1="{_axy:.1f}" x2="{_axx:.1f}" y2="{_axy - 30:.1f}" stroke="#12242b" stroke-width="1.4"/>'
+             f'<path d="M{_axx:.1f},{_axy - 30:.1f} l-3,6 l6,0 Z" fill="#12242b"/>')
+    p.append(f'<line x1="{_axx:.1f}" y1="{_axy:.1f}" x2="{_axx + 30:.1f}" y2="{_axy:.1f}" stroke="#12242b" stroke-width="1.4"/>'
+             f'<path d="M{_axx + 30:.1f},{_axy:.1f} l-6,-3 l0,6 Z" fill="#12242b"/>')
+    p.append(f'<line x1="{_axx:.1f}" y1="{_axy:.1f}" x2="{_axx + 20:.1f}" y2="{_axy - 16:.1f}" stroke="#12242b" stroke-width="1.4"/>'
+             f'<path d="M{_axx + 20:.1f},{_axy - 16:.1f} l-6,1 l3,5 Z" fill="#12242b"/>')
+    p.append(chip(_axx - 4, _axy + 12, "O", anchor="end"))
+    p.append(chip(_axx + 33, _axy + 3, "X"))
+    p.append(chip(_axx + 22, _axy - 17, "Y"))
+    p.append(chip(_axx - 3, _axy - 33, "Z", anchor="end"))
+
     # ---- labels ----
     mid = int(len(rp) * 0.55)
-    p.append(chip(VBW - 14, surf_y - 8, "MEAN WATER LEVEL", anchor="end"))
-    p.append(chip(cx, deck_y - 0.14 * dh - 10, "FPSO (turret-moored)", anchor="middle"))
+    p.append(chip(VBW - 14, surf_y - 8, "MEAN WATER LEVEL (MWL)", anchor="end"))
+    p.append(chip(cx, deck_y - 0.14 * dh - 10, "Floating platform / FPSO", anchor="middle"))
     if us > 0:
-        p.append(chip(14, surf_y - 8, f"surface current {us:.2f} m/s"))
-    p.append(chip(14, (surf_y + bed_y) / 2, f"WATER DEPTH {depth:.0f} m", light=True))
-    p.append(chip(rp[mid][0], rp[mid][1] - 12, "STEEL CATENARY RISER", light=True))
-    p.append(chip(tdp[0] - 14, tdp[1] - 16, f"TOUCHDOWN POINT (&#954;={kappa_km:.2f}/km)", light=True, anchor="end"))
-    p.append(chip(14, bed_y + 34, "SEABED"))
+        p.append(chip(14, surf_y - 8, f"Current + wind {us:.2f} m/s"))
+    p.append(chip(14, (surf_y + bed_y) / 2, f"Water depth {depth:.0f} m", light=True))
+    p.append(chip(rp[mid][0], rp[mid][1] - 12, "Steel catenary riser (SCR)", light=True))
+    p.append(chip(tdp[0] - 14, tdp[1] - 16, f"Touch Down Point (TDP), &#954;={kappa_km:.2f}/km", light=True, anchor="end"))
+    p.append(chip(VBW * 0.58, bed_y + 16, "mudline"))
+    p.append(chip(14, bed_y + 34, "Seabed (linear stiffness k)"))
     p.append(f'<rect x="0" y="{VBH - 24}" width="{VBW}" height="24" fill="#0c353d"/>')
     p.append(f'<text x="14" y="{VBH - 8}" fill="#bfe0e3" font-size="11">Illustrative cutaway &mdash; '
              f'drawn to the solved catenary geometry (a={a_cat:.0f} m, layback {span:.0f} m, '
@@ -2193,14 +2249,23 @@ if _section == "Structure":
                 '<span class="c"># closed-form catenary + outer-fibre bending</span></div>',
                 unsafe_allow_html=True)
     if _cat is not None:
-        st.markdown('<div class="sec" data-n="01">Realistic cutaway &middot; SCR system in situ</div>',
-                    unsafe_allow_html=True)
+        st.markdown('<div class="sec" data-n="01">System arrangement &middot; realistic cutaway '
+                    '(with the technical drawing below)</div>', unsafe_allow_html=True)
         components.html(
             f'<div style="width:100%">{system_cutaway_svg(payload)}</div>',
             height=700, scrolling=False,
         )
-        st.caption("Rendered illustration to the solved geometry - the pictorial companion to "
-                   "the drafting-grade General Arrangement (Overview) and the to-scale profile below.")
+        st.caption("Rendered cutaway to the solved geometry, annotated with the standard SCR "
+                   "conventions (HOP, &#952;<sub>HP</sub>, arc length, TDP, mudline, current/VIV) after "
+                   "Buberg et al. and common riser-analysis figures.")
+        st.markdown('<div class="sec">General arrangement &middot; drafting-grade technical drawing</div>',
+                    unsafe_allow_html=True)
+        components.html(
+            f'<div style="width:100%;background:#fff">{system_schematic_svg(payload, cfg.riser)}</div>',
+            height=720, scrolling=False,
+        )
+        st.caption("The engineering GA drawing kept alongside the illustration: to-scale, with the "
+                   "turret / hang-off, riser pipe-section and TDP weld detail callouts and a title block.")
         st.markdown('<div class="sec" data-n="02">Static catenary configuration &middot; riser shape &amp; touchdown</div>',
                     unsafe_allow_html=True)
         gc1, gc2 = dcols([3, 2])
