@@ -1575,23 +1575,18 @@ st.markdown(
       /* --- left-rail section navigation --- */
       .navtitle { font-size:10px; font-weight:600; letter-spacing:.14em; text-transform:uppercase;
         color:var(--muted); margin:2px 0 8px 2px; }
-      .st-key-navsec [role="radiogroup"] { gap:3px; }
-      .st-key-navsec [role="radiogroup"] > label { display:flex; align-items:center; padding:8px 12px;
-        border-radius:8px; margin:0; border:1px solid transparent; cursor:pointer;
-        transition:background .13s ease, border-color .13s ease; }
-      .st-key-navsec [role="radiogroup"] > label:hover { background:var(--panel); }
-      /* hide the radio control (first child is a span or div depending on Streamlit build) */
-      .st-key-navsec [role="radiogroup"] > label > :first-child { display:none !important; }
-      .st-key-navsec [role="radiogroup"] > label,
-      .st-key-navsec [role="radiogroup"] > label * { font-size:13.5px !important; font-weight:500 !important;
-        color:var(--sub) !important; }
-      .st-key-navsec [role="radiogroup"] > label:has(input:checked),
-      .st-key-navsec [role="radiogroup"] > label:has([aria-checked="true"]) {
-        background:var(--panel); border-color:var(--line2); box-shadow:var(--shadow-sm); }
-      .st-key-navsec [role="radiogroup"] > label:has(input:checked) *,
-      .st-key-navsec [role="radiogroup"] > label:has([aria-checked="true"]) * {
-        color:var(--accent) !important; font-weight:600 !important; }
-      .navrule { border:none; border-top:1px solid var(--line); margin:14px 0 10px; }
+      /* section nav = a column of buttons styled as a rail (version-proof) */
+      div[class*="st-key-nav_"] { margin-bottom:2px; }
+      div[class*="st-key-nav_"] button { justify-content:flex-start !important; text-align:left !important;
+        border:1px solid transparent !important; background:transparent !important; color:var(--sub) !important;
+        font-weight:500 !important; font-size:13.5px !important; padding:7px 12px !important;
+        border-radius:8px !important; box-shadow:none !important; min-height:0 !important; }
+      div[class*="st-key-nav_"] button:hover { background:var(--panel) !important; color:var(--ink) !important;
+        border-color:transparent !important; }
+      div[class*="st-key-nav_"] button[kind="primary"] { background:var(--panel) !important;
+        color:var(--accent) !important; border-color:var(--line2) !important; font-weight:600 !important;
+        box-shadow:var(--shadow-sm) !important; }
+      .navrule { border:none; border-top:1px solid var(--line); margin:12px 0 10px; }
 
       /* --- remaining-life hero --- */
       .hero { display:grid; grid-template-columns:1.25fr 2fr; gap:22px; background:var(--panel);
@@ -1633,8 +1628,14 @@ st.markdown(
 
 NAV_SECTIONS = ["Overview", "Structure", "Environment", "Sensing", "Detection",
                 "Assimilation", "Economics", "Ledger", "Provenance"]
+st.session_state.setdefault("section", "Overview")
 st.sidebar.markdown('<div class="navtitle">Sections</div>', unsafe_allow_html=True)
-_section = st.sidebar.radio("Section", NAV_SECTIONS, label_visibility="collapsed", key="navsec")
+for _s in NAV_SECTIONS:
+    if st.sidebar.button(_s, key=f"nav_{_s}", width="stretch",
+                         type="primary" if st.session_state["section"] == _s else "secondary"):
+        st.session_state["section"] = _s
+        st.rerun()
+_section = st.session_state["section"]
 st.sidebar.markdown('<hr class="navrule"/>', unsafe_allow_html=True)
 
 
