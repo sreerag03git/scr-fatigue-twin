@@ -1580,15 +1580,17 @@ st.markdown(
         border-radius:8px; margin:0; border:1px solid transparent; cursor:pointer;
         transition:background .13s ease, border-color .13s ease; }
       .st-key-navsec [role="radiogroup"] > label:hover { background:var(--panel); }
-      .st-key-navsec [role="radiogroup"] > label > div:first-child { display:none; }
-      .st-key-navsec [role="radiogroup"] > label p { font-size:13.5px !important; font-weight:500;
+      /* hide the radio control (first child is a span or div depending on Streamlit build) */
+      .st-key-navsec [role="radiogroup"] > label > :first-child { display:none !important; }
+      .st-key-navsec [role="radiogroup"] > label,
+      .st-key-navsec [role="radiogroup"] > label * { font-size:13.5px !important; font-weight:500 !important;
         color:var(--sub) !important; }
       .st-key-navsec [role="radiogroup"] > label:has(input:checked),
       .st-key-navsec [role="radiogroup"] > label:has([aria-checked="true"]) {
         background:var(--panel); border-color:var(--line2); box-shadow:var(--shadow-sm); }
-      .st-key-navsec [role="radiogroup"] > label:has(input:checked) p,
-      .st-key-navsec [role="radiogroup"] > label:has([aria-checked="true"]) p {
-        color:var(--accent) !important; font-weight:600; }
+      .st-key-navsec [role="radiogroup"] > label:has(input:checked) *,
+      .st-key-navsec [role="radiogroup"] > label:has([aria-checked="true"]) * {
+        color:var(--accent) !important; font-weight:600 !important; }
       .navrule { border:none; border-top:1px solid var(--line); margin:14px 0 10px; }
 
       /* --- remaining-life hero --- */
