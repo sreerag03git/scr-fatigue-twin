@@ -1423,6 +1423,8 @@ with st.sidebar.expander("Current & VIV (DNV-RP-F204)"):
     viv_current = st.slider("Surface current [m/s]", 0.0, 3.0, 0.6, 0.1,
                             help="Sheared current driving cross-flow VIV. 0 disables VIV.")
     viv_damping = st.slider("Damping ratio", 0.005, 0.10, 0.02, 0.005)
+    mg_thk_mm = st.slider("Marine growth thickness [mm]", 0.0, 150.0, 0.0, 10.0,
+                          help="DNV-RP-C205: biofouling adds hydro diameter + mass, worsening VIV.")
     st.caption("VIV screening (Griffin A/D + lock-in). **Screening upper bound**, not design-grade.")
 
 with st.sidebar.expander("Long-term wave climate (scatter)"):
@@ -1459,7 +1461,8 @@ try:
         hang_off=HangOffConfig(porch_x=porch_x, porch_y=porch_y, porch_z=porch_z,
                                riser_azimuth_deg=azimuth, exact_rotation=exact_rot),
         environment=EnvironmentConfig(enabled=env_on, temperature_factor=tfac, salinity_factor=sfac),
-        viv=VivConfig(surface_current=viv_current, damping_ratio=viv_damping),
+        viv=VivConfig(surface_current=viv_current, damping_ratio=viv_damping,
+                      marine_growth_thickness=mg_thk_mm / 1e3),
         n_monte_carlo=int(n_mc), seed=int(seed),
     )
 except Exception as exc:  # noqa: BLE001
@@ -1814,6 +1817,16 @@ with tab_env:
         cv2.caption("Power-law current U(h)=U_s·(h/d)^(1/7) (DNV-RP-C205). The current sets the "
                     "vortex-shedding frequency and the reduced velocity that drives cross-flow VIV "
                     "lock-in (see the Detection tab).")
+        _mg = _viv.get("marine_growth", {})
+        if _mg.get("enabled"):
+            cv2.markdown(kpi_row([
+                kpi("Marine growth", f'{_mg["thickness_mm"]:.0f}', "mm", "amber"),
+                kpi("Effective diameter", f'{_mg["effective_diameter_mm"]:.0f}', "mm",
+                    f'base {_mg["base_diameter_mm"]:.0f}'),
+                kpi("Added mass", f'{_mg["mass_per_length"]:.0f}', "kg/m"),
+            ]), unsafe_allow_html=True)
+            cv2.caption("DNV-RP-C205 biofouling enlarges the hydrodynamic diameter (D_eff = D + 2·t) "
+                        "and mass - shifting the vortex-shedding frequency and worsening VIV.")
     if _lt is not None:
         st.markdown('<div class="sec" data-n="05">Long-term fatigue &middot; wave scatter-diagram summation '
                     '(DNV-RP-C203 &sect;5) &middot; D = &Sigma; p&#8202;D</div>', unsafe_allow_html=True)
