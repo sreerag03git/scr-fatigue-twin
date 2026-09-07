@@ -1097,6 +1097,181 @@ def system_schematic_svg(payload: dict, riser) -> str:
     return "".join(p)
 
 
+def system_cutaway_svg(payload: dict) -> str:
+    """Realistic pictorial cutaway of the SCR system (rendered, gradient-shaded).
+
+    A physically-scaled illustration companion to the drafting-grade GA drawing and
+    the data-plot profile: a depth-graded water column with sunlight rays, a shaded
+    turret-moored FPSO, the riser drawn as a cylindrical-shaded pipe on the real
+    catenary, an amber touchdown hot-spot, and a textured seabed. Driven by the
+    solved geometry (illustrative, not for construction).
+    """
+    import math
+
+    cat = payload["catenary"]
+    xs = [float(v) for v in cat["x"]]
+    ys = [float(v) for v in cat["y"]]
+    depth = float(cat["water_depth"])
+    span = float(cat["horizontal_span"])
+    a_cat = float(cat["catenary_parameter"])
+    kappa_km = float(cat["tdp_curvature"]) * 1000.0
+    hang_from_vert = 90.0 - float(cat["top_angle_deg"])
+    viv = payload.get("viv") or {}
+    us = float(viv.get("current_surface_velocity", 0.0)) if viv.get("enabled") else 0.0
+
+    VBW, VBH = 1200, 820
+    sky_h, ml, mr, bed_band = 150, 180, 64, 100
+    mtop = sky_h + 34
+    aw, ah = VBW - ml - mr, VBH - mtop - bed_band
+    scale = min(aw / span, ah / depth)
+    dw, dh = span * scale, depth * scale
+    ox, oy = ml, mtop
+
+    def SX(cx: float) -> float:
+        return ox + (span - cx) * scale
+
+    def SY(cy: float) -> float:
+        return oy + (depth - cy) * scale
+
+    surf_y, bed_y = SY(depth), SY(0.0)
+    rp = [(SX(x), SY(y)) for x, y in zip(xs, ys)]
+    hang = (SX(span), SY(depth))
+    tdp = (SX(0.0), SY(0.0))
+    poly = " ".join(f"{x:.1f},{y:.1f}" for x, y in rp)
+
+    def chip(x, y, t, light=False, anchor="start"):
+        fill = "#eef7f8" if light else "#12242b"
+        stroke = "#0c353d" if light else "#ffffff"
+        return (f'<text x="{x:.1f}" y="{y:.1f}" fill="{fill}" font-size="12.5" font-weight="600" '
+                f'text-anchor="{anchor}" style="paint-order:stroke;stroke:{stroke};stroke-width:3px;'
+                f'stroke-linejoin:round;">{t}</text>')
+
+    p = [f'<svg viewBox="0 0 {VBW} {VBH}" width="100%" xmlns="http://www.w3.org/2000/svg" '
+         f'font-family="Inter, Segoe UI, sans-serif">']
+    p.append(
+        '<defs>'
+        '<linearGradient id="cutwater" x1="0" y1="0" x2="0" y2="1">'
+        '<stop offset="0" stop-color="#cfe7e9"/><stop offset="0.28" stop-color="#5fa6ac"/>'
+        '<stop offset="0.62" stop-color="#217e86"/><stop offset="1" stop-color="#0c353d"/></linearGradient>'
+        '<linearGradient id="cutsky" x1="0" y1="0" x2="0" y2="1">'
+        '<stop offset="0" stop-color="#eef5f6"/><stop offset="1" stop-color="#dcebed"/></linearGradient>'
+        '<linearGradient id="cutbed" x1="0" y1="0" x2="0" y2="1">'
+        '<stop offset="0" stop-color="#c7bb96"/><stop offset="1" stop-color="#6f6038"/></linearGradient>'
+        '<linearGradient id="cuthull" x1="0" y1="0" x2="0" y2="1">'
+        '<stop offset="0" stop-color="#c3ccd0"/><stop offset="0.5" stop-color="#8a979d"/>'
+        '<stop offset="1" stop-color="#515f65"/></linearGradient>'
+        '<linearGradient id="cutdeck" x1="0" y1="0" x2="0" y2="1">'
+        '<stop offset="0" stop-color="#dfe6e8"/><stop offset="1" stop-color="#aeb9bd"/></linearGradient>'
+        '<radialGradient id="cuthaze" cx="0.5" cy="0.1" r="1.1">'
+        '<stop offset="0" stop-color="#ffffff" stop-opacity="0.18"/>'
+        '<stop offset="0.6" stop-color="#ffffff" stop-opacity="0"/></radialGradient>'
+        '<filter id="cutsoft"><feGaussianBlur stdDeviation="3"/></filter>'
+        '<filter id="cutray"><feGaussianBlur stdDeviation="6"/></filter>'
+        '<pattern id="cutstip" width="10" height="10" patternUnits="userSpaceOnUse">'
+        '<circle cx="2" cy="3" r="0.7" fill="#5c4f2c" opacity="0.5"/>'
+        '<circle cx="7" cy="7" r="0.7" fill="#5c4f2c" opacity="0.4"/></pattern>'
+        '</defs>'
+    )
+
+    # bands
+    p.append(f'<rect x="0" y="0" width="{VBW}" height="{surf_y:.1f}" fill="url(#cutsky)"/>')
+    p.append(f'<rect x="0" y="{surf_y:.1f}" width="{VBW}" height="{bed_y - surf_y:.1f}" fill="url(#cutwater)"/>')
+    p.append(f'<rect x="0" y="{bed_y:.1f}" width="{VBW}" height="{VBH - bed_y:.1f}" fill="url(#cutbed)"/>')
+    p.append(f'<rect x="0" y="{surf_y:.1f}" width="{VBW}" height="{0.5 * (bed_y - surf_y):.1f}" fill="url(#cuthaze)"/>')
+
+    # sunlight rays
+    for i in range(5):
+        rx = 120 + i * 230
+        w = 26 + i * 4
+        y2 = surf_y + 0.62 * (bed_y - surf_y)
+        p.append(f'<polygon points="{rx},{surf_y:.1f} {rx + w},{surf_y:.1f} {rx - 70 + w},{y2:.1f} '
+                 f'{rx - 90},{y2:.1f}" fill="#ffffff" opacity="0.06" filter="url(#cutray)"/>')
+    # current streaks
+    if us > 0:
+        for i in range(7):
+            cyy = surf_y + 30 + i * ((bed_y - surf_y - 40) / 7)
+            ln = 40 + (i % 3) * 24
+            cxx = 90 + (i * 97) % 600
+            p.append(f'<line x1="{cxx}" y1="{cyy:.1f}" x2="{cxx + ln}" y2="{cyy:.1f}" stroke="#eafcff" '
+                     f'stroke-width="1.6" opacity="0.12" stroke-linecap="round"/>')
+    # surface waves + specular
+    wave = "".join(f'Q{(i * VBW / 40 + VBW / 80):.0f},{surf_y - 4:.1f} {((i + 1) * VBW / 40):.0f},{surf_y:.1f} '
+                   for i in range(40))
+    p.append(f'<path d="M0,{surf_y:.1f} {wave}" fill="none" stroke="#ffffff" stroke-width="1.6" opacity="0.5"/>')
+
+    # seabed texture + mudline
+    p.append(f'<rect x="0" y="{bed_y:.1f}" width="{VBW}" height="{VBH - bed_y:.1f}" fill="url(#cutstip)"/>')
+    dune = "".join(f'Q{(i * VBW / 24 + VBW / 48):.0f},{bed_y - 2 - (2 if i % 2 else 0):.1f} '
+                   f'{((i + 1) * VBW / 24):.0f},{bed_y:.1f} ' for i in range(24))
+    p.append(f'<path d="M0,{bed_y:.1f} {dune}" fill="none" stroke="#efe6c8" stroke-width="1.4" opacity="0.6"/>')
+
+    # ---- FPSO (rendered) ----
+    lf = 0.30 * dw
+    cx = hang[0]
+    deck_y, keel_y = surf_y - 0.045 * dh, surf_y + 0.05 * dh
+    aft, fwd = cx - lf * 0.62, cx + lf * 0.42
+    p.append(f'<path d="M{aft:.1f},{surf_y + 2:.1f} L{fwd:.1f},{surf_y + 2:.1f} L{fwd:.1f},{surf_y + 18:.1f} '
+             f'L{aft:.1f},{surf_y + 18:.1f} Z" fill="#ffffff" opacity="0.06" filter="url(#cutsoft)"/>')
+    hull = (f'M{aft:.1f},{deck_y:.1f} L{fwd - 0.05 * lf:.1f},{deck_y - 0.006 * dh:.1f} '
+            f'Q{fwd:.1f},{deck_y:.1f} {fwd:.1f},{surf_y:.1f} L{fwd - 0.03 * lf:.1f},{keel_y:.1f} '
+            f'L{aft + 0.04 * lf:.1f},{keel_y:.1f} Q{aft:.1f},{keel_y:.1f} {aft:.1f},{keel_y - 0.02 * dh:.1f} Z')
+    p.append(f'<path d="{hull}" fill="url(#cuthull)" stroke="#3a474d" stroke-width="1.2"/>')
+    p.append(f'<line x1="{aft + 3:.1f}" y1="{surf_y:.1f}" x2="{fwd - 4:.1f}" y2="{surf_y:.1f}" stroke="#0a5c61" stroke-width="2.2" opacity="0.8"/>')
+    p.append(f'<rect x="{aft:.1f}" y="{deck_y - 3:.1f}" width="{fwd - 0.05 * lf - aft:.1f}" height="4" fill="url(#cutdeck)"/>')
+    for i in range(4):
+        mx = aft + 0.14 * lf + i * 0.14 * lf
+        p.append(f'<rect x="{mx:.1f}" y="{deck_y - 0.05 * dh:.1f}" width="{0.11 * lf:.1f}" height="{0.05 * dh:.1f}" '
+                 f'fill="url(#cutdeck)" stroke="#5a686e" stroke-width="0.8"/>')
+    p.append(f'<rect x="{aft + 0.03 * lf:.1f}" y="{deck_y - 0.10 * dh:.1f}" width="{0.10 * lf:.1f}" height="{0.10 * dh:.1f}" '
+             f'fill="url(#cutdeck)" stroke="#5a686e" stroke-width="0.9"/>')
+    p.append(f'<path d="M{fwd - 0.11 * lf:.1f},{deck_y - 0.05 * dh:.1f} L{fwd - 0.065 * lf:.1f},{deck_y - 0.14 * dh:.1f} '
+             f'L{fwd - 0.02 * lf:.1f},{deck_y - 0.05 * dh:.1f}" fill="none" stroke="#6d7c82" stroke-width="1"/>')
+    p.append(f'<path d="M{fwd - 0.065 * lf:.1f},{deck_y - 0.14 * dh:.1f} q5,-8 12,-2 q-3,6 -10,3" fill="#d98a2b" opacity="0.85"/>')
+    p.append(f'<rect x="{cx - 0.02 * lf:.1f}" y="{deck_y - 0.03 * dh:.1f}" width="{0.04 * lf:.1f}" '
+             f'height="{0.03 * dh + keel_y - deck_y:.1f}" fill="#7d8a90" stroke="#465257" stroke-width="0.8"/>')
+    p.append(f'<circle cx="{cx:.1f}" cy="{keel_y:.1f}" r="4.5" fill="#d98a2b" stroke="#ffffff" stroke-width="1"/>')
+
+    # ---- riser: cylindrical-shaded catenary pipe ----
+    p.append(f'<polyline points="{poly}" fill="none" stroke="#06343a" stroke-width="9" stroke-linecap="round" stroke-linejoin="round"/>')
+    p.append(f'<polyline points="{poly}" fill="none" stroke="#0e7c82" stroke-width="6.5" stroke-linecap="round" stroke-linejoin="round"/>')
+
+    def _off(pts, o):
+        out = []
+        for i in range(len(pts)):
+            a = pts[max(0, i - 1)]
+            b = pts[min(len(pts) - 1, i + 1)]
+            ddx, ddy = b[0] - a[0], b[1] - a[1]
+            ln = math.hypot(ddx, ddy) or 1.0
+            out.append((pts[i][0] - ddy / ln * o, pts[i][1] + ddx / ln * o))
+        return out
+
+    hi = _off(rp, 1.6)
+    p.append(f'<polyline points="{" ".join(f"{x:.1f},{y:.1f}" for x, y in hi)}" fill="none" '
+             f'stroke="#7fdfe4" stroke-width="1.8" stroke-linecap="round" opacity="0.8"/>')
+    p.append(f'<line x1="{tdp[0]:.1f}" y1="{tdp[1]:.1f}" x2="{tdp[0] + 0.03 * dw:.1f}" y2="{tdp[1]:.1f}" stroke="#06343a" stroke-width="9" stroke-linecap="round"/>')
+    p.append(f'<line x1="{tdp[0]:.1f}" y1="{tdp[1]:.1f}" x2="{tdp[0] + 0.03 * dw:.1f}" y2="{tdp[1]:.1f}" stroke="#0e7c82" stroke-width="6.5" stroke-linecap="round"/>')
+    p.append(f'<circle cx="{tdp[0]:.1f}" cy="{tdp[1]:.1f}" r="16" fill="#e8a33a" opacity="0.18" filter="url(#cutsoft)"/>')
+    p.append(f'<circle cx="{tdp[0]:.1f}" cy="{tdp[1]:.1f}" r="5.5" fill="none" stroke="#f2c66b" stroke-width="2"/>')
+
+    # ---- labels ----
+    mid = int(len(rp) * 0.55)
+    p.append(chip(VBW - 14, surf_y - 8, "MEAN WATER LEVEL", anchor="end"))
+    p.append(chip(cx, deck_y - 0.14 * dh - 10, "FPSO (turret-moored)", anchor="middle"))
+    if us > 0:
+        p.append(chip(14, surf_y - 8, f"surface current {us:.2f} m/s"))
+    p.append(chip(14, (surf_y + bed_y) / 2, f"WATER DEPTH {depth:.0f} m", light=True))
+    p.append(chip(rp[mid][0], rp[mid][1] - 12, "STEEL CATENARY RISER", light=True))
+    p.append(chip(tdp[0] - 14, tdp[1] - 16, f"TOUCHDOWN POINT (&#954;={kappa_km:.2f}/km)", light=True, anchor="end"))
+    p.append(chip(14, bed_y + 34, "SEABED"))
+    p.append(f'<rect x="0" y="{VBH - 24}" width="{VBW}" height="24" fill="#0c353d"/>')
+    p.append(f'<text x="14" y="{VBH - 8}" fill="#bfe0e3" font-size="11">Illustrative cutaway &mdash; '
+             f'drawn to the solved catenary geometry (a={a_cat:.0f} m, layback {span:.0f} m, '
+             f'{hang_from_vert:.0f}&#176; from vertical). Not for construction.</text>')
+
+    p.append("</svg>")
+    return "".join(p)
+
+
 def along_riser_stress_fig(cat: dict, e_mod: float, od: float, scf: float) -> go.Figure:
     """Static bending-stress distribution along the riser arc: sigma = SCF·E·(D/2)·kappa(s).
 
@@ -2018,7 +2193,15 @@ if _section == "Structure":
                 '<span class="c"># closed-form catenary + outer-fibre bending</span></div>',
                 unsafe_allow_html=True)
     if _cat is not None:
-        st.markdown('<div class="sec" data-n="01">Static catenary configuration &middot; riser shape &amp; touchdown</div>',
+        st.markdown('<div class="sec" data-n="01">Realistic cutaway &middot; SCR system in situ</div>',
+                    unsafe_allow_html=True)
+        components.html(
+            f'<div style="width:100%">{system_cutaway_svg(payload)}</div>',
+            height=700, scrolling=False,
+        )
+        st.caption("Rendered illustration to the solved geometry - the pictorial companion to "
+                   "the drafting-grade General Arrangement (Overview) and the to-scale profile below.")
+        st.markdown('<div class="sec" data-n="02">Static catenary configuration &middot; riser shape &amp; touchdown</div>',
                     unsafe_allow_html=True)
         gc1, gc2 = dcols([3, 2])
         gc1.plotly_chart(catenary_fig(_cat), width="stretch", config={"displayModeBar": False})
@@ -2032,7 +2215,7 @@ if _section == "Structure":
                 kpi("TDP curvature", f'{_cat["tdp_curvature"]*1e3:.3f}', "1/km", "amber"),
             ]), unsafe_allow_html=True)
             st.caption("Closed-form catenary y(x)=a(cosh(x/a)-1); kappa_TDP = 1/a = w/H.")
-        st.markdown('<div class="sec" data-n="02">Static bending-stress distribution along the riser</div>',
+        st.markdown('<div class="sec" data-n="03">Static bending-stress distribution along the riser</div>',
                     unsafe_allow_html=True)
         st.plotly_chart(
             along_riser_stress_fig(_cat, cfg.riser.youngs_modulus, cfg.riser.outer_diameter, cfg.riser.scf),
@@ -2041,7 +2224,7 @@ if _section == "Structure":
                    "point - the physical reason SCR fatigue localises there.")
         _sc = cfg.riser.pipe_section()
         _w = cfg.riser.effective_submerged_weight()
-        st.markdown('<div class="sec" data-n="03">Pipe section properties &middot; derived geometry</div>',
+        st.markdown('<div class="sec" data-n="04">Pipe section properties &middot; derived geometry</div>',
                     unsafe_allow_html=True)
         pp1, pp2 = dcols([1, 1])
         with pp1:
@@ -2064,13 +2247,13 @@ if _section == "Structure":
                  ["Top tension", f"{_w*_cat['catenary_parameter']*np.cosh(_cat['horizontal_span']/_cat['catenary_parameter'])/1e3:.0f}", "kN"],
                  ["Contents density", f"{cfg.riser.contents_density:.0f}", "kg/m³"]],
                 value_cols=(1,)), unsafe_allow_html=True)
-        st.markdown('<div class="sec" data-n="04">Effective-tension distribution along the riser</div>',
+        st.markdown('<div class="sec" data-n="05">Effective-tension distribution along the riser</div>',
                     unsafe_allow_html=True)
         st.plotly_chart(riser_tension_fig(_cat, _w), width="stretch", config={"displayModeBar": False})
         st.caption("T(s) = H·cosh(x/a) rises from the horizontal tension H at the TDP to the top "
                    "tension at hang-off; the axial mean stress T/A rides under the dynamic bending.")
     if _viv is not None and _viv.get("enabled"):
-        st.markdown('<div class="sec" data-n="05">Cross-flow modal response &middot; tensioned-beam modes</div>',
+        st.markdown('<div class="sec" data-n="06">Cross-flow modal response &middot; tensioned-beam modes</div>',
                     unsafe_allow_html=True)
         vm1, vm2 = dcols([1, 1])
         vm1.plotly_chart(viv_mode_fig(_viv), width="stretch", config={"displayModeBar": False})
@@ -2080,7 +2263,7 @@ if _section == "Structure":
         vm2.caption("Reduced velocity per mode; amber = inside the lock-in band, i.e. excited.")
         _exc = [m for m in _viv["modes"] if m["excited"]]
         if _exc:
-            st.markdown('<div class="sec" data-n="06">Excited-mode table &middot; lock-in cross-flow modes</div>',
+            st.markdown('<div class="sec" data-n="07">Excited-mode table &middot; lock-in cross-flow modes</div>',
                         unsafe_allow_html=True)
             st.markdown(data_table(
                 ["Mode", "fn [Hz]", "Vr", "A/D", "Δσ [MPa]", "damage /yr"],
@@ -2093,7 +2276,7 @@ if _section == "Structure":
                     'C<sub>s</sub> = &#955;<sub>b</sub>/(&#955;<sub>b</sub>+l<sub>s</sub>) '
                     '<span class="c"># Pesce/Lenci TDP boundary-layer correction</span></div>',
                     unsafe_allow_html=True)
-        st.markdown('<div class="sec" data-n="07">Seabed-stiffness sensitivity &middot; touchdown interaction '
+        st.markdown('<div class="sec" data-n="08">Seabed-stiffness sensitivity &middot; touchdown interaction '
                     '<span class="tag amber">rigid base is conservative</span></div>', unsafe_allow_html=True)
         sb1, sb2 = dcols([3, 2])
         sb1.plotly_chart(seabed_fig(_seabed), width="stretch", config={"displayModeBar": False})
