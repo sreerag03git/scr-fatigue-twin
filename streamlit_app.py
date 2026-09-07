@@ -1821,12 +1821,14 @@ with tab_env:
         if _mg.get("enabled"):
             cv2.markdown(kpi_row([
                 kpi("Marine growth", f'{_mg["thickness_mm"]:.0f}', "mm", "amber"),
-                kpi("Effective diameter", f'{_mg["effective_diameter_mm"]:.0f}', "mm",
-                    f'base {_mg["base_diameter_mm"]:.0f}'),
+                kpi("Effective diameter", f'{_mg["effective_diameter_mm"]:.0f}', "mm"),
                 kpi("Added mass", f'{_mg["mass_per_length"]:.0f}', "kg/m"),
             ]), unsafe_allow_html=True)
-            cv2.caption("DNV-RP-C205 biofouling enlarges the hydrodynamic diameter (D_eff = D + 2·t) "
-                        "and mass - shifting the vortex-shedding frequency and worsening VIV.")
+            cv2.caption(
+                f'DNV-RP-C205 biofouling enlarges the hydrodynamic diameter '
+                f'({_mg["base_diameter_mm"]:.0f} -> {_mg["effective_diameter_mm"]:.0f} mm, '
+                f'D_eff = D + 2·t) and mass - shifting the vortex-shedding frequency and '
+                f'worsening VIV.')
     if _lt is not None:
         st.markdown('<div class="sec" data-n="05">Long-term fatigue &middot; wave scatter-diagram summation '
                     '(DNV-RP-C203 &sect;5) &middot; D = &Sigma; p&#8202;D</div>', unsafe_allow_html=True)
