@@ -168,6 +168,7 @@ export interface CrackPayload {
 export interface ReliabilityPayload {
   enabled: boolean;
   beta?: number;
+  beta_annual?: number;
   pf_cumulative?: number;
   pf_annual?: number;
   design_life_years?: number;

@@ -30,8 +30,8 @@ export function ReliabilityPanel() {
         <>
           <div className="metric-grid" style={{ gridTemplateColumns: "repeat(4, 1fr)" }}>
             <Metric
-              label="Reliability index β"
-              value={fixed(rel!.beta ?? 0, 2)}
+              label="Reliability index β (annual)"
+              value={fixed(rel!.beta_annual ?? rel!.beta ?? 0, 2)}
               tone={rel!.passes ? "signal" : "alarm"}
               size="lg"
             />
@@ -40,9 +40,10 @@ export function ReliabilityPanel() {
             <Metric label="Target β" value={fixed(rel!.target_beta ?? 0, 2)} />
           </div>
           <p className="tiny muted" style={{ marginTop: 8 }}>
-            Mean-basis median life {years(rel!.mean_curve_life_years ?? Infinity)} yr at design life{" "}
-            {years(rel!.design_life_years ?? 0)} yr. Pf compared to the DNV annual target for safety
-            class “{rel!.safety_class}”.
+            β and target are on the same annual basis (β_annual = Φ⁻¹(1−Pf_annual)); cumulative β at
+            design life {fixed(rel!.beta ?? 0, 2)}. Mean-basis median life{" "}
+            {years(rel!.mean_curve_life_years ?? Infinity)} yr at design life{" "}
+            {years(rel!.design_life_years ?? 0)} yr. Acceptance is DNV annual Pf for safety class “{rel!.safety_class}”.
           </p>
 
           {drivers.length > 0 && (
