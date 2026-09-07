@@ -79,15 +79,163 @@ export interface DataHealth {
   ok: boolean;
 }
 
+export interface TransferPayload {
+  freq: number[];
+  stress_mag: number[];
+  moment_mag: number[];
+  phase: number[];
+  route: string;
+  is_validated: boolean;
+  provenance: { is_validated?: boolean; notes?: string; source_tool?: string; [k: string]: unknown };
+}
+
+export interface CatenaryPayload {
+  x: number[];
+  y: number[];
+  catenary_parameter: number;
+  horizontal_span: number;
+  arc_length: number;
+  water_depth: number;
+  tdp_curvature: number;
+  top_angle_deg: number;
+}
+
+export interface VerificationPayload {
+  hist_edges_mpa: number[];
+  hist_counts: number[];
+  moments: Record<string, number>;
+  stress_to_mpa: number;
+  sigma_mpa: number;
+}
+
+export interface VivMode {
+  mode: number;
+  frequency_hz: number;
+  reduced_velocity: number;
+  excited: boolean;
+  a_over_d: number;
+  stress_range_mpa: number;
+  annual_damage_rate: number;
+}
+
+export interface VivPayload {
+  enabled: boolean;
+  annual_damage_rate?: number;
+  life_years?: number;
+  dominant_mode?: number;
+  stability_parameter?: number;
+  current_surface_velocity?: number;
+  is_screening?: boolean;
+  modes?: VivMode[];
+  span_length?: number;
+  dominant_shape?: { arc: number[]; disp: number[] };
+  current_profile?: { height: number[]; speed: number[] };
+  marine_growth?: {
+    enabled: boolean;
+    thickness_mm: number;
+    density: number;
+    effective_diameter_mm: number;
+    base_diameter_mm: number;
+    mass_per_length: number;
+    submerged_weight_per_length: number;
+  };
+}
+
+export interface CombinedPayload {
+  wave_rate: number;
+  viv_rate: number;
+  annual_rate: number;
+  life_years: number;
+}
+
+export interface CrackPayload {
+  enabled: boolean;
+  material?: string;
+  equivalent_stress_range_mpa?: number;
+  cycles_per_year?: number;
+  initial_flaw_mm?: number;
+  critical_depth_mm?: number;
+  delta_k0?: number;
+  delta_k_threshold?: number;
+  propagates?: boolean;
+  crack_life_years?: number;
+  fraction_propagating?: number;
+  crack_inspection_year?: number | null;
+  a_of_t?: { years: number[]; depth_mm: number[] };
+  pod?: { size_mm: number[]; prob: number[] };
+}
+
+export interface ReliabilityPayload {
+  enabled: boolean;
+  beta?: number;
+  pf_cumulative?: number;
+  pf_annual?: number;
+  design_life_years?: number;
+  safety_class?: string;
+  target_pf?: number;
+  target_beta?: number;
+  passes?: boolean;
+  mean_curve_life_years?: number;
+  importance?: Record<string, number>;
+}
+
+export interface SeabedPayload {
+  enabled: boolean;
+  lambda_b?: number;
+  base_life_years?: number;
+  life_soft?: number;
+  life_stiff?: number;
+  k_v_kpa?: number[];
+  correction?: number[];
+  life_years?: number[];
+}
+
+export interface LongTermContribution {
+  hs: number;
+  tp: number;
+  probability: number;
+  annual_rate: number;
+  damage_fraction: number;
+}
+
+export interface LongTermPayload {
+  source: string;
+  annual_damage_rate: number;
+  life_years: number;
+  n_cells: number;
+  hs_values: number[];
+  tp_values: number[];
+  contributions: LongTermContribution[];
+}
+
 export interface AnalyzeResponse {
   sea_state: { hs: number; tp: number; tz: number; gamma: number };
+  motion?: { source: string; is_validated: boolean; [k: string]: unknown };
   spectrum: { freq: number[]; motion_psd: number[]; stress_psd: number[] };
+  transfer?: TransferPayload;
+  catenary?: CatenaryPayload;
+  verification?: VerificationPayload;
+  long_term?: LongTermPayload;
+  crack?: CrackPayload;
+  reliability?: ReliabilityPayload;
+  seabed?: SeabedPayload;
+  viv?: VivPayload;
+  combined?: CombinedPayload;
+  dof_contributions?: Record<string, number>;
   damage: {
     annual_rate_time: number;
     annual_rate_spectral: number;
     deterministic_life_years: number;
     block_damage: number;
     block_seconds: number;
+    sn_environment?: string;
+    acceptance?: {
+      utilisation?: number;
+      passes?: boolean;
+      design_fatigue_factor?: number;
+      required_life_years?: number;
+      [k: string]: unknown;
+    };
   };
   environment: { enabled: boolean; factor: number; temperature_factor: number; salinity_factor: number };
   posterior: {

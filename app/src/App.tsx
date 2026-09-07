@@ -6,14 +6,20 @@ import { ConfigPanel } from "./components/panels/ConfigPanel";
 import { DamagePanel } from "./components/panels/DamagePanel";
 import { DecisionPanel } from "./components/panels/DecisionPanel";
 import { DiagramsPanel } from "./components/panels/DiagramsPanel";
+import { FracturePanel } from "./components/panels/FracturePanel";
+import { LongTermPanel } from "./components/panels/LongTermPanel";
 import { PosteriorPanel } from "./components/panels/PosteriorPanel";
+import { ReliabilityPanel } from "./components/panels/ReliabilityPanel";
 import { RunHistoryPanel } from "./components/panels/RunHistoryPanel";
 import { SeaStatePanel } from "./components/panels/SeaStatePanel";
+import { SeabedPanel } from "./components/panels/SeabedPanel";
 import { SourcePanel } from "./components/panels/SourcePanel";
 import { StatusBar } from "./components/panels/StatusBar";
 import { TopBar } from "./components/panels/TopBar";
 import { TracePanel } from "./components/panels/TracePanel";
+import { TransferPanel } from "./components/panels/TransferPanel";
 import { ValidationPanel } from "./components/panels/ValidationPanel";
+import { VivPanel } from "./components/panels/VivPanel";
 
 export default function App() {
   const { boot, bootError } = useStore();
@@ -53,9 +59,19 @@ export default function App() {
             <SeaStatePanel />
             <TracePanel />
           </div>
-          <DiagramsPanel />
+          <TransferPanel />
           <DamagePanel />
+          <LongTermPanel />
+          <div className="stage__row2">
+            <VivPanel />
+            <SeabedPanel />
+          </div>
+          <DiagramsPanel />
           <PosteriorPanel />
+          <div className="stage__row2">
+            <FracturePanel />
+            <ReliabilityPanel />
+          </div>
           <div className="stage__row2">
             <DecisionPanel />
             <ValidationPanel />
