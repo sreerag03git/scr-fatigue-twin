@@ -1405,6 +1405,139 @@ def riser_config_svg() -> str:
     return "".join(p)
 
 
+def platform_types_svg() -> str:
+    """Schematic of the common floating hosts and their riser configurations.
+
+    Illustrative context (after typical riser-system figures): semisubmersible,
+    FPSO, spar and TLP with top-tension / steel-catenary / lazy-wave risers. The
+    twin analyses the steel catenary riser (SCR); the others are shown for context.
+    """
+    INK, INK2, TEAL, DIM, SAND, WATER = (
+        "#182530", "#3a4c54", "#0e7c82", "#8b9aa0", "#9c8a5f", "#eef4f5")
+    VBW, VBH = 1120, 420
+    ywl, ybed = 74, 344
+
+    def T(x, y, t, fill=INK, size=10, anchor="middle", weight=400):
+        return (f'<text x="{x:.1f}" y="{y:.1f}" fill="{fill}" font-size="{size}" '
+                f'font-weight="{weight}" text-anchor="{anchor}">{t}</text>')
+
+    p = [f'<svg viewBox="0 0 {VBW} {VBH}" width="100%" xmlns="http://www.w3.org/2000/svg" '
+         f'font-family="Inter, Segoe UI, sans-serif">',
+         f'<rect width="{VBW}" height="{VBH}" fill="#ffffff"/>',
+         f'<rect x="0" y="{ywl}" width="{VBW}" height="{ybed - ywl}" fill="{WATER}"/>',
+         f'<pattern id="ptbed" width="10" height="10" patternUnits="userSpaceOnUse" patternTransform="rotate(45)">'
+         f'<line x1="0" y1="0" x2="0" y2="10" stroke="{SAND}" stroke-width="0.9"/></pattern>',
+         f'<rect x="0" y="{ybed}" width="{VBW}" height="{VBH - ybed}" fill="url(#ptbed)"/>',
+         f'<line x1="0" y1="{ybed}" x2="{VBW}" y2="{ybed}" stroke="{SAND}" stroke-width="1.5"/>',
+         f'<line x1="0" y1="{ywl}" x2="{VBW}" y2="{ywl}" stroke="{TEAL}" stroke-width="1.1"/>',
+         T(10, ywl - 6, "sea surface", fill=TEAL, size=9, anchor="start"),
+         T(VBW - 10, ybed + 18, "seabed", fill=SAND, size=9, anchor="end")]
+
+    def anchor_box(x):
+        return f'<rect x="{x - 8:.1f}" y="{ybed - 4:.1f}" width="16" height="8" fill="{INK2}"/>'
+
+    # 1) Semisubmersible + steel catenary riser
+    cx = 150
+    p.append(f'<rect x="{cx - 44}" y="{ywl - 26}" width="88" height="14" fill="#dfe6e7" stroke="{INK}" stroke-width="1.1"/>')
+    p.append(f'<line x1="{cx-38}" y1="{ywl-12}" x2="{cx-38}" y2="{ywl+10}" stroke="{INK}" stroke-width="3"/>')
+    p.append(f'<line x1="{cx+38}" y1="{ywl-12}" x2="{cx+38}" y2="{ywl+10}" stroke="{INK}" stroke-width="3"/>')
+    p.append(f'<rect x="{cx-50}" y="{ywl+10}" width="24" height="9" fill="#c3ccce" stroke="{INK}" stroke-width="1"/>')
+    p.append(f'<rect x="{cx+26}" y="{ywl+10}" width="24" height="9" fill="#c3ccce" stroke="{INK}" stroke-width="1"/>')
+    p.append(f'<path d="M{cx+40},{ywl+16} C {cx+70},{ywl+140} {cx+150},{ybed} {cx+165},{ybed}" fill="none" stroke="{TEAL}" stroke-width="2.4"/>')
+    p.append(anchor_box(cx + 165))
+    p.append(T(cx, ywl - 34, "Semisubmersible", fill=INK, size=11, weight=600))
+    p.append(T(cx + 70, ybed - 8, "Steel catenary riser", fill=INK2, size=9))
+
+    # 2) FPSO + catenary riser + top-tension riser
+    cx = 430
+    p.append(f'<path d="M{cx-64},{ywl-14} L{cx+58},{ywl-14} L{cx+70},{ywl-2} L{cx+58},{ywl+12} L{cx-58},{ywl+12} L{cx-70},{ywl} Z" fill="#dfe6e7" stroke="{INK}" stroke-width="1.2"/>')
+    p.append(f'<rect x="{cx-6}" y="{ywl-24}" width="10" height="10" fill="none" stroke="{INK}" stroke-width="1"/>')
+    p.append(f'<line x1="{cx-20}" y1="{ywl+12}" x2="{cx-20}" y2="{ybed}" stroke="{INK2}" stroke-width="2.2"/>')
+    p.append(anchor_box(cx - 20))
+    p.append(f'<path d="M{cx+30},{ywl+12} C {cx+70},{ywl+150} {cx+150},{ybed} {cx+165},{ybed}" fill="none" stroke="{TEAL}" stroke-width="2.4"/>')
+    p.append(anchor_box(cx + 165))
+    p.append(T(cx, ywl - 24, "FPSO", fill=INK, size=11, weight=600))
+    p.append(T(cx - 20, ybed - 8, "top-tension riser", fill=INK2, size=8.5, anchor="end"))
+    p.append(T(cx + 96, ybed - 8, "catenary riser", fill=INK2, size=9))
+
+    # 3) Spar + catenary riser
+    cx = 720
+    p.append(f'<rect x="{cx-28}" y="{ywl-18}" width="56" height="12" fill="#dfe6e7" stroke="{INK}" stroke-width="1.1"/>')
+    p.append(f'<rect x="{cx-14}" y="{ywl-6}" width="28" height="{ybed-ywl-90:.0f}" fill="#c3ccce" stroke="{INK}" stroke-width="1.1"/>')
+    p.append(f'<path d="M{cx+14},{ywl+40} C {cx+60},{ywl+150} {cx+150},{ybed} {cx+165},{ybed}" fill="none" stroke="{TEAL}" stroke-width="2.4"/>')
+    p.append(anchor_box(cx + 165))
+    p.append(T(cx, ywl - 26, "Spar", fill=INK, size=11, weight=600))
+    p.append(T(cx + 96, ybed - 8, "catenary riser", fill=INK2, size=9))
+
+    # 4) TLP + top-tension risers on taut tendons
+    cx = 1000
+    p.append(f'<rect x="{cx-44}" y="{ywl-24}" width="88" height="13" fill="#dfe6e7" stroke="{INK}" stroke-width="1.1"/>')
+    for dx in (-30, -10, 10, 30):
+        p.append(f'<rect x="{cx+dx-3}" y="{ywl-11}" width="6" height="24" fill="#c3ccce" stroke="{INK}" stroke-width="0.8"/>')
+    for dx in (-40, 40):
+        p.append(f'<line x1="{cx+dx}" y1="{ywl+13}" x2="{cx+dx}" y2="{ybed}" stroke="{INK}" stroke-width="1.2" stroke-dasharray="5 3"/>')
+        p.append(anchor_box(cx + dx))
+    for dx in (-12, 12):
+        p.append(f'<line x1="{cx+dx}" y1="{ywl+13}" x2="{cx+dx}" y2="{ybed}" stroke="{TEAL}" stroke-width="2.2"/>')
+        p.append(anchor_box(cx + dx))
+    p.append(T(cx, ywl - 32, "TLP", fill=INK, size=11, weight=600))
+    p.append(T(cx, ybed - 8, "top-tension risers", fill=INK2, size=9))
+
+    p.append(f'<rect x="0" y="{VBH - 22}" width="{VBW}" height="22" fill="#eef2f2"/>')
+    p.append(T(10, VBH - 7, "Illustrative host-platform / riser configurations. This twin analyses the steel "
+              "catenary riser (SCR); other hosts and riser types are shown for context.",
+              fill=DIM, size=9.5, anchor="start"))
+    p.append("</svg>")
+    return "".join(p)
+
+
+def flexible_riser_svg() -> str:
+    """Unbonded flexible-pipe cross-section (an alternative to the bonded steel SCR).
+
+    Illustrative layer stack after typical flexible-riser figures: anti-collapse
+    carcass, internal pressure sheath, hoop/pressure armour, cross-wound tensile
+    armour wires, and the outer sheath. The twin models the steel catenary riser.
+    """
+    INK, INK2, DIM = "#182530", "#3a4c54", "#8b9aa0"
+    VBW, VBH = 1120, 300
+    cx, cy = 200, 150
+
+    def T(x, y, t, fill=INK, size=9.5, anchor="start", weight=400):
+        return (f'<text x="{x:.1f}" y="{y:.1f}" fill="{fill}" font-size="{size}" '
+                f'font-weight="{weight}" text-anchor="{anchor}">{t}</text>')
+
+    layers = [
+        (108, "#c3ccce", "Outer sheath (PA/PE)"),
+        (98, "#9fb0b5", "Tensile armour (outer, cross-wound)"),
+        (86, "#7d8f95", "Tensile armour (inner, cross-wound)"),
+        (72, "#b8a76a", "Pressure / hoop armour"),
+        (58, "#dcd6b4", "Internal pressure sheath"),
+        (46, "#8a979d", "Anti-collapse carcass (interlocked)"),
+        (34, "#ffffff", "Bore"),
+    ]
+    p = [f'<svg viewBox="0 0 {VBW} {VBH}" width="100%" xmlns="http://www.w3.org/2000/svg" '
+         f'font-family="Inter, Segoe UI, sans-serif">',
+         f'<rect width="{VBW}" height="{VBH}" fill="#ffffff"/>',
+         T(20, 30, "FLEXIBLE (UNBONDED) RISER — PIPE CROSS-SECTION", fill=INK, size=11.5, weight=600)]
+    for r, fill, _lbl in layers:
+        p.append(f'<circle cx="{cx}" cy="{cy}" r="{r}" fill="{fill}" stroke="{INK}" stroke-width="0.9"/>')
+    # a small carcass interlock hint (dashes on the carcass ring)
+    p.append(f'<circle cx="{cx}" cy="{cy}" r="40" fill="none" stroke="{INK2}" stroke-width="0.8" stroke-dasharray="3 3"/>')
+    # leader labels to the right, stacked
+    lxr = cx + 130
+    for i, (r, _f, lbl) in enumerate(layers):
+        ly = 66 + i * 26
+        p.append(f'<line x1="{cx + r * 0.72:.1f}" y1="{cy - r * 0.72 + i * 3:.1f}" x2="{lxr - 6}" y2="{ly}" stroke="{DIM}" stroke-width="0.7"/>')
+        p.append(f'<circle cx="{lxr - 6}" cy="{ly}" r="2" fill="{DIM}"/>')
+        p.append(T(lxr, ly + 3, lbl, fill=INK2, size=9.5))
+    p.append(f'<rect x="0" y="{VBH - 22}" width="{VBW}" height="22" fill="#eef2f2"/>')
+    p.append(T(20, VBH - 7, "Illustrative unbonded flexible-pipe layers - an alternative riser type; the twin "
+              "models the bonded steel catenary riser (see the pipe-section detail in the GA drawing).",
+              fill=DIM, size=9.5))
+    p.append("</svg>")
+    return "".join(p)
+
+
 def along_riser_stress_fig(cat: dict, e_mod: float, od: float, scf: float) -> go.Figure:
     """Static bending-stress distribution along the riser arc: sigma = SCF·E·(D/2)·kappa(s).
 
@@ -2353,6 +2486,16 @@ if _section == "Structure":
         st.caption("The touchdown-point solver here models the plain SCR. A steel lazy-wave riser "
                    "(SLWR) adds a buoyancy section (sag + hog) to decouple vessel motion from the TDP "
                    "- shown schematically for context; it needs a dedicated lazy-wave solver.")
+        st.markdown('<div class="sec">Host platforms &amp; riser types <span class="tag amber">illustrative context</span></div>', unsafe_allow_html=True)
+        components.html(f'<div style="width:100%;background:#fff">{platform_types_svg()}</div>',
+                        height=440, scrolling=False)
+        st.caption("Common floating hosts and their riser configurations (semissubmersible, FPSO, spar, "
+                   "TLP). This twin analyses the steel catenary riser; the rest are context.")
+        st.markdown('<div class="sec">Flexible (unbonded) riser &middot; pipe cross-section <span class="tag amber">illustrative context</span></div>', unsafe_allow_html=True)
+        components.html(f'<div style="width:100%;background:#fff">{flexible_riser_svg()}</div>',
+                        height=310, scrolling=False)
+        st.caption("A flexible pipe is an alternative to the steel SCR - unbonded carcass / sheath / "
+                   "hoop + tensile armour layers. The twin models the bonded steel catenary riser.")
         st.markdown('<div class="sec" data-n="02">Static catenary configuration &middot; riser shape &amp; touchdown</div>',
                     unsafe_allow_html=True)
         gc1, gc2 = dcols([3, 2])
