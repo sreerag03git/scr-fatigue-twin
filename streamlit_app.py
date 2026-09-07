@@ -652,34 +652,40 @@ def divergence_fan_fig(dfan: dict) -> go.Figure:
 
 
 def architecture_svg() -> str:
-    """Professional data-flow block diagram of the twin's processing chain."""
-    INK, TEAL, TEAL2, AMBER, DIM = "#17242b", "#0e7c82", "#16a6ac", "#b07d1a", "#93a3a9"
+    """Drafting-style signal-flow block diagram of the twin's processing chain."""
+    INK, TEAL, TEAL2, AMBER, DIM, LINE = (
+        "#182530", "#0e7c82", "#16a6ac", "#a86f16", "#8b9aa0", "#e7ecec")
     stages = [
         ("01", "SENSING", "MRU 6-DOF motion", "Eq.6 hang-off"),
-        ("02", "TRANSFER", "H(f): MRU → TDP", "Morison / import"),
-        ("03", "STRESS", "TDP hot-spot σ", "SCF · M/Z"),
-        ("04", "DETECTION", "rainflow · S-N · Miner", "DNV-RP-C203"),
+        ("02", "TRANSFER", "H(f): MRU &rarr; TDP", "Morison / import"),
+        ("03", "STRESS", "TDP hot-spot &#963;", "SCF &#183; M/Z"),
+        ("04", "DETECTION", "rainflow &#183; S-N &#183; Miner", "DNV-RP-C203"),
         ("05", "POSTERIOR", "Monte-Carlo life", "10k members"),
         ("06", "ASSIMILATION", "Bayesian update", "AR(1) n_eff"),
-        ("07", "DECISION", "RBI · economics", "Eq.11 ΔC"),
+        ("07", "DECISION", "RBI &#183; economics", "Eq.11 &#916;C"),
     ]
-    W, H = 1120, 300
-    bw, bh, gap, x0, ymid = 138, 62, 16, 18, 168
+    W, H = 1200, 320
+    bw, bh, gap, x0, ymid = 148, 66, 15, 30, 176
     p = [f'<svg viewBox="0 0 {W} {H}" width="100%" xmlns="http://www.w3.org/2000/svg" '
          "font-family='Inter, Segoe UI, sans-serif'>",
          f'<rect width="{W}" height="{H}" fill="#ffffff"/>',
-         '<defs><marker id="af" markerWidth="9" markerHeight="9" refX="7" refY="3" orient="auto">'
-         f'<path d="M0,0 L7,3 L0,6 Z" fill="{DIM}"/></marker></defs>']
+         f'<rect x="8" y="8" width="{W-16}" height="{H-16}" fill="none" stroke="{INK}" stroke-width="0.7"/>',
+         '<defs><marker id="af" markerWidth="10" markerHeight="9" refX="7.5" refY="3" orient="auto">'
+         f'<path d="M0,0 L8,3 L0,6 Z" fill="{DIM}"/></marker>'
+         '<marker id="afa" markerWidth="10" markerHeight="9" refX="7.5" refY="3" orient="auto">'
+         f'<path d="M0,0 L8,3 L0,6 Z" fill="{AMBER}"/></marker>'
+         '<marker id="aft" markerWidth="10" markerHeight="9" refX="7.5" refY="3" orient="auto">'
+         f'<path d="M0,0 L8,3 L0,6 Z" fill="{TEAL2}"/></marker></defs>']
 
     def box(x, y, num, title, sub, std, accent=TEAL):
         return (
             f'<g>'
-            f'<rect x="{x}" y="{y}" width="{bw}" height="{bh}" rx="3" fill="#f7fafb" '
-            f'stroke="{INK}" stroke-width="1.2"/>'
-            f'<rect x="{x}" y="{y}" width="{bw}" height="4" fill="{accent}"/>'
-            f'<text x="{x+9}" y="{y+20}" font-size="9" fill="{accent}" letter-spacing="1">{num} {title}</text>'
-            f'<text x="{x+9}" y="{y+37}" font-size="12" fill="{INK}" font-weight="600">{sub}</text>'
-            f'<text x="{x+9}" y="{y+52}" font-size="9.5" fill="{DIM}">{std}</text>'
+            f'<rect x="{x}" y="{y}" width="{bw}" height="{bh}" fill="#fcfdfd" stroke="{INK}" stroke-width="1.1"/>'
+            f'<text x="{x+10}" y="{y+16}" font-size="9" fill="{accent}" font-weight="600" letter-spacing="0.5">{num}</text>'
+            f'<text x="{x+28}" y="{y+16}" font-size="8.5" fill="{DIM}" letter-spacing="0.9">{title}</text>'
+            f'<line x1="{x}" y1="{y+23}" x2="{x+bw}" y2="{y+23}" stroke="{LINE}" stroke-width="0.7"/>'
+            f'<text x="{x+10}" y="{y+42}" font-size="12" fill="{INK}" font-weight="600">{sub}</text>'
+            f'<text x="{x+10}" y="{y+57}" font-size="9" fill="{DIM}">{std}</text>'
             f'</g>'
         )
 
@@ -691,24 +697,27 @@ def architecture_svg() -> str:
         if i > 0:
             xp = x0 + (i - 1) * (bw + gap) + bw
             p.append(f'<line x1="{xp}" y1="{ymid+bh/2}" x2="{x}" y2="{ymid+bh/2}" '
-                     f'stroke="{DIM}" stroke-width="1.3" marker-end="url(#af)"/>')
+                     f'stroke="{DIM}" stroke-width="1.2" marker-end="url(#af)"/>')
     # Side inputs feeding DETECTION (box index 3).
     x_det = xs[3]
-    p.append(box(x_det - (bw + gap) / 2 - 30, 42, "+", "ENVIRONMENT", "wave scatter", "DNV-RP-C203 §5", AMBER))
-    p.append(box(x_det + (bw + gap) / 2 - 30, 42, "+", "VIV", "current lock-in", "DNV-RP-F204", AMBER))
-    for dx in (bw * 0.3, bw * 0.7):
-        p.append(f'<line x1="{x_det + dx - 30 + (bw+gap)/2 - bw*0.5:.0f}" y1="{42+bh}" '
-                 f'x2="{x_det + dx:.0f}" y2="{ymid}" stroke="{AMBER}" stroke-width="1.2" '
-                 f'stroke-dasharray="4 3" marker-end="url(#af)"/>')
+    env_x, viv_x, sy = x_det - bw - 4, x_det + bw + 4, 46
+    p.append(box(env_x, sy, "+", "ENVIRONMENT", "wave scatter", "DNV-RP-C203 &#167;5", AMBER))
+    p.append(box(viv_x, sy, "+", "VIV", "current lock-in", "DNV-RP-F204", AMBER))
+    p.append(f'<line x1="{env_x+bw*0.5:.0f}" y1="{sy+bh}" x2="{x_det+bw*0.30:.0f}" y2="{ymid}" '
+             f'stroke="{AMBER}" stroke-width="1.1" stroke-dasharray="4 3" marker-end="url(#afa)"/>')
+    p.append(f'<line x1="{viv_x+bw*0.5:.0f}" y1="{sy+bh}" x2="{x_det+bw*0.70:.0f}" y2="{ymid}" '
+             f'stroke="{AMBER}" stroke-width="1.1" stroke-dasharray="4 3" marker-end="url(#afa)"/>')
     # Feedback loop: decision -> sensing (continuous monitoring).
     x_last = xs[-1] + bw
-    p.append(f'<path d="M{x_last-bw/2},{ymid+bh} L{x_last-bw/2},{ymid+bh+34} '
-             f'L{x0+bw/2},{ymid+bh+34} L{x0+bw/2},{ymid+bh}" fill="none" stroke="{TEAL2}" '
-             f'stroke-width="1.1" stroke-dasharray="5 4" marker-end="url(#af)"/>')
-    p.append(f'<text x="{(x0+x_last)/2}" y="{ymid+bh+50}" text-anchor="middle" font-size="9.5" '
+    p.append(f'<path d="M{x_last-bw/2},{ymid+bh} L{x_last-bw/2},{ymid+bh+36} '
+             f'L{x0+bw/2},{ymid+bh+36} L{x0+bw/2},{ymid+bh}" fill="none" stroke="{TEAL2}" '
+             f'stroke-width="1.1" stroke-dasharray="5 4" marker-end="url(#aft)"/>')
+    p.append(f'<text x="{(x0+x_last)/2}" y="{ymid+bh+52}" text-anchor="middle" font-size="9.5" '
              f'fill="{TEAL2}">continuous re-assimilation as monitoring data accrues</text>')
-    p.append(f'<text x="{x0}" y="26" font-size="10" fill="{INK}" letter-spacing="1.5" '
-             f'font-weight="600">DIGITAL-TWIN PROCESSING CHAIN</text>')
+    p.append(f'<text x="{x0}" y="30" font-size="12.5" fill="{INK}" letter-spacing="0.6" '
+             f'font-weight="600"><tspan fill="{TEAL}" font-weight="700">B&#160;&#160;</tspan>'
+             f'DIGITAL-TWIN PROCESSING CHAIN</text>')
+    p.append(f'<line x1="{x0}" y1="38" x2="{W-30}" y2="38" stroke="{LINE}" stroke-width="0.8"/>')
     p.append("</svg>")
     return "".join(p)
 
@@ -720,13 +729,18 @@ def _svg_arrow(x1, y1, x2, y2, color, width=1.0, both=False):
             f'stroke="{color}" stroke-width="{width}" marker-end="url(#dimend)"{start}/>')
 
 
-def system_schematic_svg(payload: dict) -> str:
-    """Technical side-elevation of the SCR system as a hand-built engineering SVG.
+def system_schematic_svg(payload: dict, riser) -> str:
+    """Detailed to-scale general-arrangement side elevation of the SCR system.
 
-    Geometry (catenary, water depth, layback, hang-off angle) is the actual solved
-    result; the drawing adds dimension lines, a hatched seabed, a sheared current
-    profile, an FPSO line-art hull, and leader-line callouts. Rendered to scale.
+    Driven by the actual solved catenary geometry and the riser section. Drafting-
+    grade line-art: a turret-moored FPSO, the suspended catenary drawn as a
+    double-line pipe, hatched seabed strata with a touchdown trench, a sheared
+    current profile, full dimensioning with elevation markers, three enlarged
+    detail callouts (turret & hang-off hull section, riser pipe section, TDP weld
+    hot-spot) and a title block. Rendered to scale (V approx H).
     """
+    import math
+
     cat = payload["catenary"]
     xs = [float(v) for v in cat["x"]]
     ys = [float(v) for v in cat["y"]]
@@ -736,182 +750,341 @@ def system_schematic_svg(payload: dict) -> str:
     arc = float(cat["arc_length"])
     hang_from_vert = 90.0 - float(cat["top_angle_deg"])
     kappa_km = float(cat["tdp_curvature"]) * 1000.0
+    od_mm = riser.outer_diameter * 1e3
+    wt_mm = riser.wall_thickness * 1e3
+    grade = riser.material_grade
+    coat_mm = riser.coating_thickness * 1e3
+    contents = riser.contents_density
 
-    INK, DIM, TEAL, TEAL2 = "#17242b", "#93a3a9", "#0e7c82", "#16a6ac"
-    AMBER, SAND, WATER = "#b07d1a", "#a98b5e", "#eef4f5"
-    FONT = "font-family='Inter, Segoe UI, sans-serif'"
+    INK, INK2, DIM, WIT = "#182530", "#3a4c54", "#8b9aa0", "#c4ced1"
+    TEAL, TEALD, AMBER, SAND1 = "#0e7c82", "#0a5c61", "#a86f16", "#9c8a5f"
+    STEEL, STEELF, FAINT, HULL = "#ccd4d7", "#e9eeef", "#eef1f2", "#dfe6e7"
 
-    VBW, VBH = 1080, 700
-    ml, mr, mt, mb = 140, 210, 58, 112
-    aw, ah = VBW - ml - mr, VBH - mt - mb
+    VBW, VBH = 1440, 880
+    ml, mtop, panelW = 118, 70, 880
+    surf_pad = 92
+    oy = mtop + surf_pad
+    bed_max = VBH - 150 - 64
+    ah = bed_max - oy
+    aw = panelW - ml
     scale = min(aw / span, ah / depth)
     dw, dh = span * scale, depth * scale
-    ox = ml + (aw - dw) / 2.0
-    oy = mt + (ah - dh) / 2.0
+    ox = ml
 
-    def SX(xp: float) -> float:
-        return ox + xp * scale
+    def SX(cx: float) -> float:
+        return ox + (span - cx) * scale
 
-    def SY(yp: float) -> float:
-        return oy + dh - yp * scale
+    def SY(cy: float) -> float:
+        return oy + (depth - cy) * scale
 
     surf_y, bed_y = SY(depth), SY(0.0)
-    left_edge, right_edge = SX(0.0) - 0.16 * dw, SX(span) + 0.09 * dw
+    left_x, right_x = SX(span) - 0.03 * dw, SX(0.0) + 0.02 * dw
     tdp = (SX(0.0), SY(0.0))
     hang = (SX(span), SY(depth))
-    riser = " ".join(f"{SX(x):.1f},{SY(y):.1f}" for x, y in zip(xs, ys))
 
-    p = []
-    p.append(
-        f'<svg viewBox="0 0 {VBW} {VBH}" width="100%" xmlns="http://www.w3.org/2000/svg" '
-        f'preserveAspectRatio="xMidYMid meet" {FONT} font-size="13">'
-    )
+    def T(x, y, t, fill=INK, size=11, anchor="start", weight=400, rot=None, ls=0):
+        rr = f' transform="rotate({rot} {x:.1f} {y:.1f})"' if rot is not None else ""
+        ll = f' letter-spacing="{ls}"' if ls else ""
+        return (f'<text x="{x:.1f}" y="{y:.1f}" fill="{fill}" font-size="{size}" '
+                f'font-weight="{weight}" text-anchor="{anchor}"{ll}{rr}>{t}</text>')
+
+    def LN(x1, y1, x2, y2, c, w, d=None, marker=""):
+        da = f' stroke-dasharray="{d}"' if d else ""
+        return f'<line x1="{x1:.1f}" y1="{y1:.1f}" x2="{x2:.1f}" y2="{y2:.1f}" stroke="{c}" stroke-width="{w}"{da}{marker}/>'
+
+    def RC(x, y, w, h, fill="none", stroke=INK, sw=1.0, rx=0):
+        return (f'<rect x="{x:.1f}" y="{y:.1f}" width="{w:.1f}" height="{h:.1f}" '
+                f'fill="{fill}" stroke="{stroke}" stroke-width="{sw}" rx="{rx}"/>')
+
+    p = [f'<svg viewBox="0 0 {VBW} {VBH}" width="100%" xmlns="http://www.w3.org/2000/svg" '
+         f'preserveAspectRatio="xMidYMid meet" font-family="Inter, Segoe UI, sans-serif">']
     p.append(
         '<defs>'
-        '<marker id="dimend" markerWidth="10" markerHeight="10" refX="8.5" refY="4" orient="auto">'
-        f'<path d="M0,0.5 L9,4 L0,7.5 L2.6,4 Z" fill="{DIM}"/></marker>'
-        '<marker id="dimstart" markerWidth="10" markerHeight="10" refX="0.5" refY="4" orient="auto">'
-        f'<path d="M9,0.5 L0,4 L9,7.5 L6.4,4 Z" fill="{DIM}"/></marker>'
-        '<marker id="cur" markerWidth="9" markerHeight="9" refX="7" refY="3" orient="auto">'
-        f'<path d="M0,0 L7,3 L0,6 Z" fill="{TEAL2}"/></marker>'
-        '<pattern id="seabed" width="9" height="9" patternUnits="userSpaceOnUse" patternTransform="rotate(45)">'
-        f'<line x1="0" y1="0" x2="0" y2="9" stroke="{SAND}" stroke-width="1.1"/></pattern>'
+        f'<marker id="a2" markerWidth="12" markerHeight="10" refX="9.5" refY="4" orient="auto"><path d="M0,0.5 L10,4 L0,7.5 L2.8,4 Z" fill="{DIM}"/></marker>'
+        f'<marker id="a1" markerWidth="12" markerHeight="10" refX="1.5" refY="4" orient="auto"><path d="M10,0.5 L0,4 L10,7.5 L7.2,4 Z" fill="{DIM}"/></marker>'
+        f'<marker id="cur" markerWidth="9" markerHeight="9" refX="7" refY="3" orient="auto"><path d="M0,0 L7,3 L0,6 Z" fill="{TEAL}"/></marker>'
+        f'<pattern id="hatchS" width="7" height="7" patternUnits="userSpaceOnUse" patternTransform="rotate(45)"><line x1="0" y1="0" x2="0" y2="7" stroke="{INK2}" stroke-width="0.5"/></pattern>'
+        f'<pattern id="soil1" width="9" height="9" patternUnits="userSpaceOnUse" patternTransform="rotate(45)"><line x1="0" y1="0" x2="0" y2="9" stroke="{SAND1}" stroke-width="0.8"/></pattern>'
+        f'<pattern id="soil2" width="14" height="14" patternUnits="userSpaceOnUse"><circle cx="3" cy="3" r="0.8" fill="{SAND1}"/><circle cx="9" cy="9" r="0.8" fill="{SAND1}"/></pattern>'
         '</defs>'
     )
-    p.append(f'<rect x="0" y="0" width="{VBW}" height="{VBH}" fill="#ffffff"/>')
+    p.append(RC(0, 0, VBW, VBH, fill="#ffffff", stroke="none"))
+    p.append(RC(12, 12, VBW - 24, VBH - 24, sw=1.4))
+    p.append(RC(17, 17, VBW - 34, VBH - 34, sw=0.6))
 
-    # Water column + hatched seabed + mud line + mean water level.
-    p.append(f'<rect x="{left_edge:.1f}" y="{surf_y:.1f}" width="{right_edge - left_edge:.1f}" '
-             f'height="{bed_y - surf_y:.1f}" fill="{WATER}"/>')
-    p.append(f'<rect x="{left_edge:.1f}" y="{bed_y:.1f}" width="{right_edge - left_edge:.1f}" '
-             f'height="{0.07 * dh:.1f}" fill="url(#seabed)"/>')
-    p.append(f'<line x1="{left_edge:.1f}" y1="{bed_y:.1f}" x2="{right_edge:.1f}" y2="{bed_y:.1f}" '
-             f'stroke="{SAND}" stroke-width="1.8"/>')
-    # Mean-water-level line with small wave ticks.
-    p.append(f'<line x1="{left_edge:.1f}" y1="{surf_y:.1f}" x2="{right_edge:.1f}" y2="{surf_y:.1f}" '
-             f'stroke="{TEAL2}" stroke-width="1.3"/>')
-    wl = ""
-    xx = left_edge
-    while xx < right_edge - 14:
-        wl += f'M{xx:.1f},{surf_y:.1f} q7,-5 14,0 '
-        xx += 14
-    p.append(f'<path d="{wl}" fill="none" stroke="{TEAL2}" stroke-width="0.8" opacity="0.5"/>')
-    p.append(f'<text x="{right_edge - 4:.1f}" y="{surf_y - 6:.1f}" text-anchor="end" '
-             f'fill="{TEAL2}" font-size="11">mean water level</text>')
-    p.append(f'<text x="{right_edge - 4:.1f}" y="{bed_y + 0.055 * dh:.1f}" text-anchor="end" '
-             f'fill="{SAND}" font-size="11">seabed</text>')
+    # heading
+    p.append(T(ml, 44, "A", fill=TEAL, size=13, weight=700))
+    p.append(T(ml + 16, 44, "SYSTEM ELEVATION &mdash; TURRET-MOORED FPSO / STEEL CATENARY RISER / TOUCHDOWN",
+               fill=INK, size=12.5, weight=600, ls=0.4))
+    p.append(LN(ml, 52, ml + panelW, 52, WIT, 0.8))
 
-    # Sheared current profile (left water column): wedge + arrows.
+    # to-scale grid + elevation markers (every 250 m)
+    z = 0.0
+    while z <= depth + 1:
+        y = SY(depth - z)
+        p.append(LN(left_x, y, right_x, y, FAINT, 1))
+        p.append(T(left_x - 6, y + 3, f"EL {-int(z)}", fill=WIT, size=8.5, anchor="end"))
+        z += 250.0
+    gx = 0.0
+    while gx <= span + 1:
+        x = SX(span - gx)
+        p.append(LN(x, surf_y, x, bed_y, FAINT, 1))
+        gx += 250.0
+
+    # seabed strata + mudline + touchdown trench
+    bed_thk = 0.10 * dh
+    p.append(RC(left_x, bed_y, right_x - left_x, bed_thk * 0.5, fill="url(#soil1)", stroke="none"))
+    p.append(RC(left_x, bed_y + bed_thk * 0.5, right_x - left_x, bed_thk * 0.5, fill="url(#soil2)", stroke="none"))
+    p.append(LN(left_x, bed_y, right_x, bed_y, SAND1, 1.6))
+    p.append(LN(left_x, bed_y + bed_thk * 0.5, right_x, bed_y + bed_thk * 0.5, SAND1, 0.7, "6 3"))
+    p.append(T(right_x - 4, bed_y + bed_thk * 0.28, "SOFT CLAY", fill=SAND1, size=8.5, anchor="end"))
+    p.append(T(right_x - 4, bed_y + bed_thk * 0.78, "STIFF CLAY", fill=SAND1, size=8.5, anchor="end"))
+    p.append(f'<path d="M{tdp[0] - 0.05 * dw:.1f},{bed_y:.1f} q{0.05 * dw:.1f},14 {0.10 * dw:.1f},0" '
+             f'fill="none" stroke="{SAND1}" stroke-width="1" stroke-dasharray="3 2"/>')
+
+    # mean water level + datum symbol
+    p.append(LN(left_x, surf_y, right_x, surf_y, INK, 1.1))
+    wlx = left_x
+    wlp = []
+    while wlx < right_x - 12:
+        wlp.append(f'M{wlx:.1f},{surf_y:.1f} q6,-4 12,0')
+        wlx += 12
+    p.append(f'<path d="{" ".join(wlp)}" fill="none" stroke="{TEAL}" stroke-width="0.7" opacity="0.5"/>')
+    dxm = SX(0.0) - 0.02 * dw
+    p.append(f'<path d="M{dxm:.1f},{surf_y:.1f} l6,10 l-12,0 Z" fill="none" stroke="{INK}" stroke-width="1"/>')
+    p.append(LN(dxm - 9, surf_y + 13, dxm + 9, surf_y + 13, INK, 0.8))
+    p.append(T(dxm + 13, surf_y - 6, "MWL &nbsp;EL 0.0", fill=INK, size=10))
+
+    # sheared current profile (real, if VIV/current active)
     viv = payload.get("viv")
     if viv and viv.get("enabled"):
         cp = viv["current_profile"]
         hh = [float(v) for v in cp["height"]]
         ss = [float(v) for v in cp["speed"]]
         umax = max(max(ss), 1e-6)
-        u0 = float(viv.get("current_surface_velocity", 0.0))
-        cur_x = left_edge + 6
-        length = 0.13 * dw
-        wedge = [f'{cur_x + (s / umax) * length:.1f},{SY(h):.1f}' for h, s in zip(hh, ss)]
-        wedge = [f'{cur_x:.1f},{surf_y:.1f}'] + wedge + [f'{cur_x:.1f},{bed_y:.1f}']
-        p.append(f'<polygon points="{" ".join(wedge)}" fill="rgba(15,143,156,0.10)" '
-                 f'stroke="{TEAL2}" stroke-width="0.8" stroke-dasharray="3 3"/>')
-        for i in range(1, len(hh) - 1, 4):
+        u0 = float(viv.get("current_surface_velocity", ss[-1] if ss else 0.0))
+        cur_x, cur_len = left_x + 6, 0.12 * dw
+        env = [f'{cur_x:.1f},{surf_y:.1f}']
+        for h, s in zip(hh, ss):
+            env.append(f'{cur_x + (s / umax) * cur_len:.1f},{SY(h):.1f}')
+        env.append(f'{cur_x:.1f},{bed_y:.1f}')
+        p.append(f'<polygon points="{" ".join(env)}" fill="rgba(14,124,130,0.06)" '
+                 f'stroke="{TEAL}" stroke-width="0.8" stroke-dasharray="3 3"/>')
+        for i in range(3, len(hh) - 1, 7):
             s = ss[i]
             if s > 0.03 * umax:
-                p.append(f'<line x1="{cur_x:.1f}" y1="{SY(hh[i]):.1f}" '
-                         f'x2="{cur_x + (s / umax) * length:.1f}" y2="{SY(hh[i]):.1f}" '
-                         f'stroke="{TEAL2}" stroke-width="1.4" marker-end="url(#cur)"/>')
-        p.append(f'<text x="{cur_x:.1f}" y="{surf_y - 22:.1f}" fill="{TEAL2}" font-size="11">'
-                 f'current U(z)</text>')
-        p.append(f'<text x="{cur_x:.1f}" y="{surf_y - 9:.1f}" fill="{TEAL2}" font-size="10">'
-                 f'{u0:.2f} m/s surface</text>')
+                p.append(LN(cur_x, SY(hh[i]), cur_x + (s / umax) * cur_len, SY(hh[i]),
+                            TEAL, 1.2, marker=' marker-end="url(#cur)"'))
+        p.append(T(cur_x, surf_y - 19, "CURRENT U(z)", fill=TEAL, size=9.5, weight=600))
+        p.append(T(cur_x, surf_y - 8, f"U_s = {u0:.2f} m/s &#183; 1/7 power law", fill=TEAL, size=9))
 
-    # The SCR catenary (real geometry) with TDP hot-spot marker.
-    p.append(f'<polyline points="{riser}" fill="none" stroke="{TEAL}" stroke-width="3.2" '
-             'stroke-linecap="round" stroke-linejoin="round"/>')
-    p.append(f'<circle cx="{tdp[0]:.1f}" cy="{tdp[1]:.1f}" r="5" fill="none" stroke="{AMBER}" stroke-width="1.6"/>')
-    p.append(f'<circle cx="{tdp[0]:.1f}" cy="{tdp[1]:.1f}" r="2.3" fill="{AMBER}"/>')
+    # SCR as a double-line pipe (OD walls) to scale
+    rp = [(SX(x), SY(y)) for x, y in zip(xs, ys)]
+    od_px = 3.2
 
-    # FPSO line-art hull at the hang-off.
-    cx = hang[0]
-    lpx, dr, fb = 0.135 * dw, 0.05 * dh, 0.03 * dh
-    hull = (f'M{cx - lpx:.1f},{surf_y - fb:.1f} L{cx + lpx * 0.98:.1f},{surf_y - fb:.1f} '
-            f'L{cx + lpx:.1f},{surf_y - fb * 0.2:.1f} L{cx + lpx * 0.95:.1f},{surf_y + dr * 0.55:.1f} '
-            f'L{cx + lpx * 0.68:.1f},{surf_y + dr:.1f} L{cx - lpx * 0.68:.1f},{surf_y + dr:.1f} '
-            f'L{cx - lpx * 0.95:.1f},{surf_y + dr * 0.55:.1f} L{cx - lpx:.1f},{surf_y - fb * 0.2:.1f} Z')
-    p.append(f'<path d="{hull}" fill="#f4f7f8" stroke="{INK}" stroke-width="1.7" stroke-linejoin="round"/>')
-    # Deckhouse + a couple of deck details.
-    p.append(f'<rect x="{cx - lpx * 0.62:.1f}" y="{surf_y - fb - 0.055 * dh:.1f}" '
-             f'width="{lpx * 0.34:.1f}" height="{0.055 * dh:.1f}" fill="#e7edef" stroke="{INK}" stroke-width="1.3"/>')
-    p.append(f'<line x1="{cx + lpx * 0.15:.1f}" y1="{surf_y - fb:.1f}" x2="{cx + lpx * 0.15:.1f}" '
-             f'y2="{surf_y - fb - 0.05 * dh:.1f}" stroke="{INK}" stroke-width="1.2"/>')
-    # Riser porch / turret bracket where the SCR meets the hull.
-    p.append(f'<path d="M{cx - 8:.1f},{surf_y + dr * 0.3:.1f} L{cx + 8:.1f},{surf_y + dr * 0.3:.1f} '
-             f'L{cx:.1f},{surf_y + dr:.1f} Z" fill="{INK}"/>')
-    p.append(f'<text x="{cx:.1f}" y="{surf_y - fb - 0.055 * dh - 7:.1f}" text-anchor="middle" '
-             f'fill="{INK}" font-size="11">FPSO</text>')
+    def _offset(pts, off):
+        out = []
+        for i in range(len(pts)):
+            a = pts[max(0, i - 1)]
+            b = pts[min(len(pts) - 1, i + 1)]
+            ddx, ddy = b[0] - a[0], b[1] - a[1]
+            ln = math.hypot(ddx, ddy) or 1.0
+            out.append((pts[i][0] - ddy / ln * off, pts[i][1] + ddx / ln * off))
+        return out
 
-    # Hang-off angle arc (between the local vertical and the riser tangent).
-    import math as _m
-    px2, py2 = SX(xs[-2]), SY(ys[-2])
-    tang = _m.atan2(py2 - hang[1], px2 - hang[0])  # screen-space direction into the water
-    vert = _m.pi / 2.0  # straight down in screen space
-    r_arc = 0.16 * dh
-    ax0, ay0 = hang[0] + r_arc * _m.cos(vert), hang[1] + r_arc * _m.sin(vert)
-    ax1, ay1 = hang[0] + r_arc * _m.cos(tang), hang[1] + r_arc * _m.sin(tang)
-    p.append(f'<line x1="{hang[0]:.1f}" y1="{hang[1]:.1f}" x2="{hang[0]:.1f}" y2="{hang[1] + r_arc * 1.5:.1f}" '
-             f'stroke="{DIM}" stroke-width="0.9" stroke-dasharray="4 3"/>')
-    sweep = 1 if tang < vert else 0
-    p.append(f'<path d="M{ax0:.1f},{ay0:.1f} A{r_arc:.1f},{r_arc:.1f} 0 0 {sweep} {ax1:.1f},{ay1:.1f}" '
+    up = _offset(rp, od_px)
+    dn = _offset(rp, -od_px)
+    p.append(f'<polyline points="{" ".join(f"{x:.1f},{y:.1f}" for x, y in up)}" fill="none" stroke="{TEALD}" stroke-width="1.1"/>')
+    p.append(f'<polyline points="{" ".join(f"{x:.1f},{y:.1f}" for x, y in dn)}" fill="none" stroke="{TEALD}" stroke-width="1.1"/>')
+    p.append(f'<polyline points="{" ".join(f"{x:.1f},{y:.1f}" for x, y in rp)}" fill="none" stroke="{TEAL}" '
+             f'stroke-width="{od_px * 2 - 1.2:.1f}" stroke-linecap="round" opacity="0.55"/>')
+    p.append(LN(tdp[0], tdp[1], tdp[0] + 0.02 * dw, tdp[1], TEAL, od_px * 2 - 1.2))
+
+    # ---- FPSO (turret-moored) side profile at the hang-off ----
+    Lf = 0.34 * dw
+    bx = hang[0] - Lf * 0.30
+    fwd, aft = bx + Lf * 0.70, bx - Lf * 0.30
+    deck_y, keel_y = surf_y - 0.035 * dh, surf_y + 0.045 * dh
+    tur = hang[0]
+    for f in (-0.16, 0.11):
+        axp, ay = tur + f * dw, bed_y
+        p.append(f'<path d="M{tur:.1f},{keel_y:.1f} Q{(tur + axp) / 2:.1f},{keel_y + (ay - keel_y) * 0.88:.1f} '
+                 f'{axp:.1f},{ay:.1f}" fill="none" stroke="{INK2}" stroke-width="0.8" stroke-dasharray="5 3"/>')
+        p.append(f'<path d="M{axp - 4:.1f},{ay:.1f} l4,7 l4,-7 Z" fill="{INK2}"/>')
+    hull = (f'M{aft:.1f},{deck_y:.1f} L{fwd - 0.05 * Lf:.1f},{deck_y - 0.008 * dh:.1f} '
+            f'Q{fwd:.1f},{deck_y - 0.006 * dh:.1f} {fwd:.1f},{surf_y - 0.004 * dh:.1f} '
+            f'L{fwd - 0.02 * Lf:.1f},{keel_y:.1f} L{aft + 0.03 * Lf:.1f},{keel_y:.1f} '
+            f'Q{aft:.1f},{keel_y:.1f} {aft:.1f},{keel_y - 0.02 * dh:.1f} Z')
+    p.append(f'<path d="{hull}" fill="{HULL}" stroke="{INK}" stroke-width="1.6" stroke-linejoin="round"/>')
+    p.append(LN(aft, surf_y, fwd, surf_y, INK2, 0.6))
+    p.append(LN(aft + 2, surf_y - 2.5, fwd - 4, surf_y - 2.5, TEALD, 1.4))
+    p.append(LN(aft, deck_y, fwd - 0.05 * Lf, deck_y, INK, 0.8))
+    mod_y, mod_h = deck_y - 0.05 * dh, 0.045 * dh
+    for i in range(4):
+        mx = aft + 0.12 * Lf + i * 0.145 * Lf
+        p.append(RC(mx, mod_y, 0.115 * Lf, mod_h, fill=STEELF, sw=0.9))
+    p.append(RC(aft + 0.02 * Lf, mod_y - 0.05 * dh, 0.10 * Lf, 0.05 * dh + mod_h, fill=STEELF, sw=1))
+    p.append(f'<ellipse cx="{aft + 0.07 * Lf:.1f}" cy="{mod_y - 0.05 * dh - 5:.1f}" '
+             f'rx="{0.045 * Lf:.1f}" ry="2.6" fill="none" stroke="{INK}" stroke-width="0.9"/>')
+    p.append(T(aft + 0.07 * Lf, mod_y - 0.05 * dh - 3, "H", fill=INK, size=6.5, anchor="middle", weight=700))
+    p.append(f'<path d="M{fwd - 0.11 * Lf:.1f},{mod_y:.1f} L{fwd - 0.065 * Lf:.1f},{mod_y - 0.10 * dh:.1f} '
+             f'L{fwd - 0.02 * Lf:.1f},{mod_y:.1f}" fill="none" stroke="{INK}" stroke-width="1"/>')
+    for k in range(1, 4):
+        t = k / 4.0
+        p.append(LN(fwd - 0.11 * Lf + (0.045 * Lf) * t, mod_y - 0.10 * dh * t,
+                    fwd - 0.02 * Lf - (0.045 * Lf) * t, mod_y - 0.10 * dh * t, INK2, 0.4))
+    p.append(f'<path d="M{fwd - 0.065 * Lf:.1f},{mod_y - 0.10 * dh:.1f} q5,-7 11,-2 q-3,5 -9,3" fill="{AMBER}" opacity="0.7"/>')
+    p.append(RC(tur - 0.026 * Lf, deck_y, 0.052 * Lf, keel_y - deck_y, fill="#ffffff", sw=1))
+    p.append(LN(tur - 0.026 * Lf, keel_y, tur + 0.026 * Lf, keel_y, INK, 1.2))
+    p.append(RC(tur - 0.02 * Lf, deck_y - 0.028 * dh, 0.04 * Lf, 0.028 * dh, fill=STEEL, sw=1))
+    p.append(f'<circle cx="{tur:.1f}" cy="{keel_y:.1f}" r="3.2" fill="{AMBER}" stroke="#ffffff" stroke-width="1"/>')
+    p.append(T((aft + fwd) / 2, mod_y - 0.10 * dh - 6, "FPSO (turret-moored)", fill=INK, size=10, weight=600, anchor="middle"))
+    p.append(f'<circle cx="{tur + 16:.1f}" cy="{keel_y + 2:.1f}" r="8" fill="none" stroke="{TEAL}" stroke-width="1"/>')
+    p.append(T(tur + 16, keel_y + 5, "B", fill=TEAL, size=9, anchor="middle", weight=700))
+
+    # hang-off centreline + departure-angle arc (at the top)
+    p.append(LN(hang[0], keel_y, hang[0], keel_y + 0.30 * dh, DIM, 0.9, "7 3 2 3"))
+    p0 = (SX(xs[-1]), SY(ys[-1]))
+    p1 = (SX(xs[-4]), SY(ys[-4]))
+    tang = math.atan2(p1[1] - p0[1], p1[0] - p0[0])
+    r_arc = 0.15 * dh
+    a0 = (hang[0] + r_arc * math.cos(math.pi / 2), keel_y + r_arc)
+    a1 = (hang[0] + r_arc * math.cos(tang), keel_y + r_arc * math.sin(tang))
+    p.append(f'<path d="M{a0[0]:.1f},{a0[1]:.1f} A{r_arc:.1f},{r_arc:.1f} 0 0 0 {a1[0]:.1f},{a1[1]:.1f}" '
              f'fill="none" stroke="{AMBER}" stroke-width="1.4"/>')
-    p.append(f'<text x="{hang[0] - r_arc - 4:.1f}" y="{hang[1] + r_arc * 1.9:.1f}" text-anchor="end" '
-             f'fill="{AMBER}" font-size="11">{hang_from_vert:.0f}&#176; from vertical</text>')
+    p.append(T(hang[0] + r_arc * 0.7, keel_y + r_arc * 0.7, f"&#952;={hang_from_vert:.0f}&#176;", fill=AMBER, size=11, weight=600))
 
-    # Water-depth dimension (left).
-    ddx = max(left_edge - 34, 52)
-    p.append(_svg_arrow(ddx, surf_y, ddx, bed_y, DIM, 1.0, both=True))
-    p.append(f'<line x1="{left_edge:.1f}" y1="{surf_y:.1f}" x2="{ddx - 6:.1f}" y2="{surf_y:.1f}" stroke="{DIM}" stroke-width="0.8"/>')
-    p.append(f'<line x1="{left_edge:.1f}" y1="{bed_y:.1f}" x2="{ddx - 6:.1f}" y2="{bed_y:.1f}" stroke="{DIM}" stroke-width="0.8"/>')
-    p.append(f'<text x="{ddx - 9:.1f}" y="{(surf_y + bed_y) / 2:.1f}" text-anchor="middle" '
-             f'fill="{INK}" font-size="12" transform="rotate(-90 {ddx - 9:.1f} {(surf_y + bed_y) / 2:.1f})">'
-             f'water depth  d = {depth:.0f} m</text>')
+    # TDP hot-spot + leader + detail flag
+    p.append(f'<circle cx="{tdp[0]:.1f}" cy="{tdp[1]:.1f}" r="6" fill="none" stroke="{AMBER}" stroke-width="1.6"/>')
+    p.append(f'<circle cx="{tdp[0]:.1f}" cy="{tdp[1]:.1f}" r="2.5" fill="{AMBER}"/>')
+    p.append(LN(tdp[0], tdp[1], tdp[0] - 0.09 * dw, tdp[1] - 0.09 * dh, AMBER, 0.8))
+    p.append(T(tdp[0] - 0.09 * dw - 4, tdp[1] - 0.09 * dh,
+               f"TOUCHDOWN POINT &nbsp;&#954;={kappa_km:.2f}/km", fill=AMBER, size=10, anchor="end", weight=600))
+    p.append(f'<circle cx="{tdp[0] - 0.09 * dw - 92:.1f}" cy="{tdp[1] - 0.09 * dh + 12:.1f}" r="8" fill="none" stroke="{AMBER}" stroke-width="1"/>')
+    p.append(T(tdp[0] - 0.09 * dw - 92, tdp[1] - 0.09 * dh + 15.5, "C", fill=AMBER, size=9, anchor="middle", weight=700))
 
-    # Horizontal layback (span) dimension (bottom).
-    dsy = bed_y + 0.07 * dh + 40
-    p.append(_svg_arrow(tdp[0], dsy, hang[0], dsy, DIM, 1.0, both=True))
-    p.append(f'<line x1="{tdp[0]:.1f}" y1="{bed_y + 0.07 * dh:.1f}" x2="{tdp[0]:.1f}" y2="{dsy + 6:.1f}" stroke="{DIM}" stroke-width="0.8"/>')
-    p.append(f'<line x1="{hang[0]:.1f}" y1="{surf_y:.1f}" x2="{hang[0]:.1f}" y2="{dsy + 6:.1f}" stroke="{DIM}" stroke-width="0.8" stroke-dasharray="4 3"/>')
-    p.append(f'<text x="{(tdp[0] + hang[0]) / 2:.1f}" y="{dsy - 8:.1f}" text-anchor="middle" '
-             f'fill="{INK}" font-size="12">horizontal layback  X = {span:.0f} m</text>')
+    # water-depth dimension (left) + horizontal layback (bottom)
+    wdx = left_x - 46
+    p.append(LN(wdx, surf_y, wdx, bed_y, DIM, 0.9, marker=' marker-start="url(#a1)" marker-end="url(#a2)"'))
+    p.append(LN(left_x, surf_y, wdx - 6, surf_y, WIT, 0.7))
+    p.append(LN(left_x, bed_y, wdx - 6, bed_y, WIT, 0.7))
+    p.append(T(wdx - 11, (surf_y + bed_y) / 2, f"WATER DEPTH &nbsp;d = {depth:.0f} m", fill=INK, size=10, anchor="middle", rot=90))
+    lby = bed_y + bed_thk + 42
+    p.append(LN(hang[0], lby, tdp[0], lby, DIM, 0.9, marker=' marker-start="url(#a1)" marker-end="url(#a2)"'))
+    p.append(LN(hang[0], keel_y, hang[0], lby + 6, WIT, 0.7, "4 3"))
+    p.append(LN(tdp[0], bed_y, tdp[0], lby + 6, WIT, 0.7))
+    p.append(T((hang[0] + tdp[0]) / 2, lby - 8, f"HORIZONTAL LAYBACK &nbsp;X = {span:.0f} m", fill=INK, size=10, anchor="middle"))
 
-    # Leader-line callouts.
-    def leader(x, y, tx, ty, label, color, anchor="start"):
-        return (f'<line x1="{x:.1f}" y1="{y:.1f}" x2="{tx:.1f}" y2="{ty:.1f}" stroke="{color}" stroke-width="0.8"/>'
-                f'<circle cx="{x:.1f}" cy="{y:.1f}" r="2" fill="{color}"/>'
-                f'<text x="{tx + (4 if anchor == "start" else -4):.1f}" y="{ty:.1f}" '
-                f'text-anchor="{anchor}" fill="{color}" font-size="11">{label}</text>')
+    # ================= RIGHT: DETAIL PANELS =================
+    rx0 = ml + panelW + 34
+    rw = VBW - rx0 - 24
+    p.append(LN(rx0 - 14, mtop - 6, rx0 - 14, VBH - 150, WIT, 0.8))
 
-    p.append(leader(tdp[0], tdp[1], tdp[0] + 0.10 * dw, tdp[1] + 0.055 * dh,
-                    f'touchdown point (TDP), &#954;={kappa_km:.2f}/km', AMBER))
-    # Sag point = lowest riser gradient region (~ mid, take the point of min slope).
-    mid = len(xs) // 3
-    sx_, sy_ = SX(xs[mid]), SY(ys[mid])
-    p.append(leader(sx_, sy_, sx_ - 0.12 * dw, sy_ - 0.02 * dh, 'suspended catenary', TEAL, anchor="end"))
-    p.append(leader(hang[0], hang[1], hang[0] - 0.02 * dw, hang[1] - 0.14 * dh, 'hang-off / porch', INK, anchor="end"))
+    # DETAIL B : turret & hang-off hull section
+    ay0 = mtop + 2
+    p.append(T(rx0, ay0, "B", fill=TEAL, size=12, weight=700))
+    p.append(T(rx0 + 15, ay0, "DETAIL &mdash; TURRET & RISER HANG-OFF", fill=INK, size=10.5, weight=600))
+    p.append(T(rx0 + rw, ay0, "SCALE 1:250", fill=DIM, size=8.5, anchor="end"))
+    dA_x, dA_y, dA_w, dA_h = rx0, ay0 + 10, rw, 224
+    p.append(RC(dA_x, dA_y, dA_w, dA_h, fill="#fcfdfd", stroke=WIT, sw=0.8))
+    hsx, hsw = dA_x + 18, dA_w - 36
+    hsy, hh2 = dA_y + 30, dA_h - 70
+    p.append(RC(hsx, hsy, hsw, hh2, fill=HULL, sw=1.4))
+    wlY = hsy + 0.30 * hh2
+    p.append(LN(hsx - 6, wlY, hsx + hsw + 6, wlY, TEALD, 1.2))
+    p.append(T(hsx - 8, wlY + 3, "WL", fill=TEALD, size=8, anchor="end"))
+    for i, lb in enumerate(("MAIN DECK", "TWEEN DECK", "TANK TOP")):
+        y = hsy + (0.16 + 0.24 * i) * hh2
+        if i > 0:
+            p.append(LN(hsx, y, hsx + hsw, y, INK2, 0.7))
+        p.append(T(hsx + 3, y - 3, lb, fill=INK2, size=7))
+    p.append(LN(hsx, hsy + hh2 - 0.10 * hh2, hsx + hsw, hsy + hh2 - 0.10 * hh2, INK, 0.9))
+    p.append(T(hsx + 3, hsy + hh2 - 0.10 * hh2 + 9, "DOUBLE BOTTOM", fill=INK2, size=7))
+    for i in range(1, 8):
+        fx = hsx + i * hsw / 8
+        p.append(LN(fx, hsy, fx, hsy + hh2, INK2, 0.3))
+    mpx, mpw = hsx + hsw * 0.42, hsw * 0.16
+    p.append(RC(mpx, hsy, mpw, hh2, fill="#ffffff", sw=1.1))
+    p.append(RC(mpx + mpw * 0.15, hsy - 14, mpw * 0.7, 20, fill=STEEL, sw=1))
+    p.append(T(mpx + mpw * 0.5, hsy - 17, "SWIVEL", fill=INK, size=7, anchor="middle"))
+    p.append(f'<circle cx="{mpx + mpw * 0.5:.1f}" cy="{hsy + 0.10 * hh2:.1f}" r="4" fill="none" stroke="{INK}" stroke-width="1"/>')
+    p.append(T(mpx + mpw + 4, hsy + 0.10 * hh2 + 3, "MAIN BEARING", fill=INK2, size=7))
+    p.append(RC(mpx + mpw * 0.30, hsy + 0.20 * hh2, mpw * 0.4, 0.55 * hh2, fill=STEELF, sw=0.9))
+    p.append(T(mpx + mpw * 0.5, hsy + 0.48 * hh2, "TURRET", fill=INK2, size=7, anchor="middle", rot=90))
+    p.append(T(mpx + mpw * 0.5, hsy + hh2 + 10, "MOONPOOL", fill=INK2, size=7, anchor="middle"))
+    fjx, fjy = mpx + mpw * 0.5, hsy + hh2
+    p.append(f'<circle cx="{fjx:.1f}" cy="{fjy:.1f}" r="4.5" fill="{AMBER}" stroke="#ffffff" stroke-width="1"/>')
+    p.append(f'<path d="M{fjx:.1f},{fjy:.1f} q22,26 46,40" fill="none" stroke="{TEAL}" stroke-width="2.6"/>')
+    p.append(T(fjx + 50, fjy + 44, "FLEX JOINT", fill=AMBER, size=8, weight=600))
+    p.append(T(fjx + 50, fjy + 55, "&rarr; SCR hang-off", fill=TEAL, size=8))
 
-    # Legend / parameter block (bottom-right).
-    lx, ly = VBW - mr + 6, VBH - mb + 18
-    p.append(f'<rect x="{lx:.1f}" y="{ly:.1f}" width="{mr - 18:.1f}" height="86" rx="4" '
-             f'fill="#f7fafb" stroke="{DIM}" stroke-width="0.8"/>')
-    lines = [
-        ("SCR SIDE ELEVATION", INK, 11),
-        (f"catenary a=H/w : {a_cat:,.0f} m", INK, 11),
-        (f"arc length     : {arc:,.0f} m", INK, 11),
-        (f"hang-off angle : {hang_from_vert:.0f}&#176; from vert.", INK, 11),
-        ("geometry to scale", DIM, 10),
-    ]
-    for i, (t, c, fs) in enumerate(lines):
-        p.append(f'<text x="{lx + 8:.1f}" y="{ly + 16 + i * 15:.1f}" fill="{c}" font-size="{fs}">{t}</text>')
+    # DETAIL A : riser pipe section
+    by0 = dA_y + dA_h + 26
+    p.append(T(rx0, by0, "A", fill=TEAL, size=12, weight=700))
+    p.append(T(rx0 + 15, by0, "DETAIL &mdash; RISER PIPE SECTION", fill=INK, size=10.5, weight=600))
+    pcx, pcy = rx0 + 70, by0 + 72
+    r_o, r_i, r_c = 48.0, 48.0 - min(wt_mm / od_mm * 96.0, 30.0), 48.0 + max(coat_mm / od_mm * 96.0, 4.0)
+    p.append(f'<circle cx="{pcx}" cy="{pcy}" r="{r_c:.1f}" fill="#f0ece0" stroke="{SAND1}" stroke-width="1"/>')
+    p.append(f'<circle cx="{pcx}" cy="{pcy}" r="{r_o}" fill="{STEEL}" stroke="{INK}" stroke-width="1.4"/>')
+    p.append(f'<circle cx="{pcx}" cy="{pcy}" r="{r_i:.1f}" fill="#ffffff" stroke="{INK}" stroke-width="1.2"/>')
+    p.append(f'<path d="M {pcx - r_o} {pcy} A {r_o} {r_o} 0 0 1 {pcx} {pcy - r_o} L {pcx} {pcy - r_i:.1f} '
+             f'A {r_i:.1f} {r_i:.1f} 0 0 0 {pcx - r_i:.1f} {pcy} Z" fill="url(#hatchS)" opacity="0.8"/>')
+    p.append(LN(pcx - r_o, pcy + r_o + 14, pcx + r_o, pcy + r_o + 14, DIM, 0.8, marker=' marker-start="url(#a1)" marker-end="url(#a2)"'))
+    p.append(T(pcx, pcy + r_o + 26, f"OD {od_mm:.0f} mm", fill=INK, size=9, anchor="middle"))
+    lx2 = pcx + r_c + 18
+    rows_a = [("OD steel", f"{od_mm:.1f} mm"), ("wall t", f"{wt_mm:.1f} mm"), ("grade", grade),
+              ("coating", f"{coat_mm:.0f} mm"), ("contents", f"{contents:.0f} kg/m&#179;")]
+    for i, (k, v) in enumerate(rows_a):
+        yy = by0 + 34 + i * 15
+        p.append(T(lx2, yy, k, fill=INK2, size=8.5))
+        p.append(T(rx0 + rw, yy, v, fill=INK, size=9, anchor="end"))
+
+    # DETAIL C : TDP weld hot-spot
+    cy0 = by0 + 150
+    p.append(T(rx0, cy0, "C", fill=AMBER, size=12, weight=700))
+    p.append(T(rx0 + 15, cy0, "DETAIL &mdash; TDP WELD HOT-SPOT", fill=INK, size=10.5, weight=600))
+    wx, wy, wl2 = rx0 + 16, cy0 + 56, rw - 40
+    p.append(RC(wx, wy - 13, wl2 * 0.46, 26, fill=STEEL, sw=1.2))
+    p.append(RC(wx + wl2 * 0.50, wy - 13, wl2 * 0.46, 26, fill=STEEL, sw=1.2))
+    p.append(f'<path d="M{wx + wl2 * 0.46:.1f},{wy - 13:.1f} q{wl2 * 0.04:.1f},-6 {wl2 * 0.08:.1f},0 '
+             f'l0,26 q{-wl2 * 0.04:.1f},6 {-wl2 * 0.08:.1f},0 Z" fill="{STEELF}" stroke="{INK}" stroke-width="1"/>')
+    p.append(T(wx + wl2 * 0.5, wy - 18, "girth weld", fill=INK2, size=8, anchor="middle"))
+    p.append(f'<path d="M{wx + wl2 * 0.46:.1f},{wy + 13:.1f} l3,7 l-2,1 l3,6" fill="none" stroke="{AMBER}" stroke-width="1.6"/>')
+    p.append(T(wx + wl2 * 0.46 + 14, wy + 24, "fatigue crack (weld toe)", fill=AMBER, size=8))
+    p.append(LN(wx - 4, wy + 15, wx + wl2 + 4, wy + 15, SAND1, 1.2))
+    p.append(LN(wx - 2, wy, wx - 16, wy, INK2, 1, marker=' marker-end="url(#a1)"'))
+    p.append(LN(wx + wl2 + 2, wy, wx + wl2 + 16, wy, INK2, 1, marker=' marker-end="url(#a2)"'))
+    p.append(T(wx + wl2 * 0.5, wy + 40, "cyclic bending &#916;&#963; from vessel motion + VIV", fill=INK2, size=8, anchor="middle"))
+
+    # ================= TITLE BLOCK =================
+    tby, tbx = VBH - 138, ml
+    tbw = VBW - 24 - ml
+    p.append(RC(tbx, tby, tbw, 120, sw=1.2))
+    c1, c2, c3 = tbx, tbx + tbw * 0.40, tbx + tbw * 0.70
+    p.append(LN(c2, tby, c2, tby + 120, INK, 0.8))
+    p.append(LN(c3, tby, c3, tby + 120, INK, 0.8))
+    p.append(LN(c1, tby + 70, c2, tby + 70, INK, 0.6))
+    p.append(T(c1 + 12, tby + 26, "STEEL CATENARY RISER &mdash; GENERAL ARRANGEMENT", fill=INK, size=13, weight=700))
+    p.append(T(c1 + 12, tby + 46, "System side elevation &#183; vessel &rarr; suspended catenary &rarr; touchdown point", fill=INK2, size=10))
+    p.append(T(c1 + 12, tby + 90, "PROJECT", fill=DIM, size=8, weight=600))
+    p.append(T(c1 + 12, tby + 104, "SCR-Twin reference case (illustrative)", fill=INK, size=9.5))
+    rows_t = [("Water depth", f"{depth:.0f} m"), ("Hang-off angle", f"{hang_from_vert:.0f}&#176; from vertical"),
+              ("Catenary a=H/w", f"{a_cat:.0f} m"), ("Suspended arc length", f"{arc:.0f} m"),
+              ("Horizontal layback", f"{span:.0f} m"), ("TDP curvature", f"{kappa_km:.2f} /km")]
+    for i, (k, v) in enumerate(rows_t):
+        col = c2 + 12 if i < 3 else c2 + tbw * 0.15 + 12
+        yy = tby + 22 + (i % 3) * 30
+        p.append(T(col, yy, k, fill=DIM, size=8, weight=600))
+        p.append(T(col, yy + 13, v, fill=INK, size=10))
+    p.append(T(c3 + 12, tby + 22, "SCALE", fill=DIM, size=8, weight=600))
+    p.append(T(tbx + tbw - 12, tby + 22, "TO SCALE (V approx H), m", fill=INK, size=9, anchor="end"))
+    p.append(T(c3 + 12, tby + 46, "UNITS", fill=DIM, size=8, weight=600))
+    p.append(T(tbx + tbw - 12, tby + 46, "metres", fill=INK, size=9, anchor="end"))
+    p.append(T(c3 + 12, tby + 70, "REV", fill=DIM, size=8, weight=600))
+    p.append(T(tbx + tbw - 12, tby + 70, "B", fill=INK, size=9, anchor="end"))
+    p.append(T(c3 + 12, tby + 94, "STATUS", fill=DIM, size=8, weight=600))
+    p.append(T(tbx + tbw - 12, tby + 94, "ILLUSTRATIVE &mdash; NOT FOR CONSTRUCTION", fill=AMBER, size=8.5, anchor="end", weight=600))
+    p.append(T(ml, tby - 8, "PLANE OF SECTION: vertical, in the riser departure azimuth", fill=DIM, size=8.5))
 
     p.append("</svg>")
     return "".join(p)
@@ -1727,13 +1900,13 @@ with tab_over:
         st.markdown('<div class="sec" data-n="A">System configuration &middot; SCR side elevation '
                     '(vessel &rarr; catenary &rarr; touchdown)</div>', unsafe_allow_html=True)
         components.html(
-            f'<div style="width:100%;background:#fff">{system_schematic_svg(payload)}</div>',
-            height=470, scrolling=False,
+            f'<div style="width:100%;background:#fff">{system_schematic_svg(payload, cfg.riser)}</div>',
+            height=720, scrolling=False,
         )
     st.markdown('<div class="sec" data-n="B">Digital-twin architecture &middot; processing chain</div>',
                 unsafe_allow_html=True)
     components.html(f'<div style="width:100%;background:#fff">{architecture_svg()}</div>',
-                    height=280, scrolling=False)
+                    height=316, scrolling=False)
 
 # ========================== STRUCTURE ====================================== #
 with tab_struct:
