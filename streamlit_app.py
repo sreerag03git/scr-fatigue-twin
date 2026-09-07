@@ -760,7 +760,6 @@ def system_schematic_svg(payload: dict, riser) -> str:
     od_mm = riser.outer_diameter * 1e3
     wt_mm = riser.wall_thickness * 1e3
     grade = riser.material_grade
-    coat_mm = riser.coating_thickness * 1e3
     contents = riser.contents_density
 
     INK, INK2, DIM, WIT = "#182530", "#3a4c54", "#8b9aa0", "#c4ced1"
@@ -1029,25 +1028,30 @@ def system_schematic_svg(payload: dict, riser) -> str:
     by0 = dA_y + dA_h + 26
     p.append(T(rx0, by0, "A", fill=TEAL, size=12, weight=700))
     p.append(T(rx0 + 15, by0, "DETAIL &mdash; RISER PIPE SECTION", fill=INK, size=10.5, weight=600))
-    pcx, pcy = rx0 + 70, by0 + 72
-    r_o, r_i, r_c = 48.0, 48.0 - min(wt_mm / od_mm * 96.0, 30.0), 48.0 + max(coat_mm / od_mm * 96.0, 4.0)
-    p.append(f'<circle cx="{pcx}" cy="{pcy}" r="{r_c:.1f}" fill="#f0ece0" stroke="{SAND1}" stroke-width="1"/>')
-    p.append(f'<circle cx="{pcx}" cy="{pcy}" r="{r_o}" fill="{STEEL}" stroke="{INK}" stroke-width="1.4"/>')
-    p.append(f'<circle cx="{pcx}" cy="{pcy}" r="{r_i:.1f}" fill="#ffffff" stroke="{INK}" stroke-width="1.2"/>')
-    p.append(f'<path d="M {pcx - r_o} {pcy} A {r_o} {r_o} 0 0 1 {pcx} {pcy - r_o} L {pcx} {pcy - r_i:.1f} '
-             f'A {r_i:.1f} {r_i:.1f} 0 0 0 {pcx - r_i:.1f} {pcy} Z" fill="url(#hatchS)" opacity="0.8"/>')
-    p.append(LN(pcx - r_o, pcy + r_o + 14, pcx + r_o, pcy + r_o + 14, DIM, 0.8, marker=' marker-start="url(#a1)" marker-end="url(#a2)"'))
-    p.append(T(pcx, pcy + r_o + 26, f"OD {od_mm:.0f} mm", fill=INK, size=9, anchor="middle"))
-    lx2 = pcx + r_c + 18
-    rows_a = [("OD steel", f"{od_mm:.1f} mm"), ("wall t", f"{wt_mm:.1f} mm"), ("grade", grade),
-              ("coating", f"{coat_mm:.0f} mm"), ("contents", f"{contents:.0f} kg/m&#179;")]
-    for i, (k, v) in enumerate(rows_a):
-        yy = by0 + 34 + i * 15
-        p.append(T(lx2, yy, k, fill=INK2, size=8.5))
-        p.append(T(rx0 + rw, yy, v, fill=INK, size=9, anchor="end"))
+    pcx, pcy = rx0 + 76, by0 + 66
+    # bonded material stack (bands exaggerated for legibility, not to scale)
+    pipe_layers = [
+        (46.0, "#c3ccce", "Solid PP (outer sheath)"),
+        (41.0, "#dcd6b4", "Syntactic PP (insulation)"),
+        (32.0, STEEL, "Carbon steel (X65)"),
+        (22.0, "#b8a76a", "CRA liner (alloy 825)"),
+        (17.0, "#ffffff", f"Bore / contents {contents:.0f} kg/m&#179;"),
+    ]
+    for r, fill, _lbl in pipe_layers:
+        p.append(f'<circle cx="{pcx}" cy="{pcy}" r="{r:.1f}" fill="{fill}" stroke="{INK}" stroke-width="1"/>')
+    p.append(f'<path d="M {pcx - 32} {pcy} A 32 32 0 0 1 {pcx} {pcy - 32} L {pcx} {pcy - 22} '
+             f'A 22 22 0 0 0 {pcx - 22} {pcy} Z" fill="url(#hatchS)" opacity="0.7"/>')
+    for i, (r, _f, lbl) in enumerate(pipe_layers):
+        ly = pcy - 42 + i * 21
+        lxr = pcx + 54
+        p.append(LN(pcx + r * 0.70, pcy - r * 0.70 + i * 1.5, lxr - 4, ly, DIM, 0.7))
+        p.append(T(lxr, ly + 3, lbl, fill=INK2, size=8))
+    p.append(LN(pcx - 46, pcy + 58, pcx + 46, pcy + 58, DIM, 0.8, marker=' marker-start="url(#a1)" marker-end="url(#a2)"'))
+    p.append(T(pcx, pcy + 70, f"OD {od_mm:.0f} mm &#183; wall t {wt_mm:.1f} mm &#183; {grade}", fill=INK, size=8.5, anchor="middle"))
+    p.append(T(pcx, pcy + 82, "layers schematic, not to scale", fill=DIM, size=7.5, anchor="middle"))
 
     # DETAIL C : TDP weld hot-spot
-    cy0 = by0 + 150
+    cy0 = by0 + 168
     p.append(T(rx0, cy0, "C", fill=AMBER, size=12, weight=700))
     p.append(T(rx0 + 15, cy0, "DETAIL &mdash; TDP WELD HOT-SPOT", fill=INK, size=10.5, weight=600))
     wx, wy, wl2 = rx0 + 16, cy0 + 56, rw - 40
@@ -1324,6 +1328,79 @@ def system_cutaway_svg(payload: dict) -> str:
              f'drawn to the solved catenary geometry (a={a_cat:.0f} m, layback {span:.0f} m, '
              f'{hang_from_vert:.0f}&#176; from vertical). Not for construction.</text>')
 
+    p.append("</svg>")
+    return "".join(p)
+
+
+def riser_config_svg() -> str:
+    """Schematic comparison of riser configurations: plain SCR vs steel lazy-wave (SLWR).
+
+    Illustrative line-art (after Buberg et al. Fig. of SCR / SLWR): the twin solves the
+    plain steel catenary; a lazy-wave / steep-wave configuration (buoyancy section,
+    sag + hog) needs a dedicated solver and is shown here only for context.
+    """
+    INK, INK2, TEAL, AMBER, DIM = "#182530", "#3a4c54", "#0e7c82", "#a86f16", "#8b9aa0"
+    SAND, WATER = "#9c8a5f", "#eef4f5"
+    VBW, VBH = 1120, 520
+    ywl, ybed = 92, 452
+
+    def T(x, y, t, fill=INK, size=10.5, anchor="start", weight=400):
+        return (f'<text x="{x:.1f}" y="{y:.1f}" fill="{fill}" font-size="{size}" '
+                f'font-weight="{weight}" text-anchor="{anchor}">{t}</text>')
+
+    p = [f'<svg viewBox="0 0 {VBW} {VBH}" width="100%" xmlns="http://www.w3.org/2000/svg" '
+         f'font-family="Inter, Segoe UI, sans-serif">',
+         f'<rect width="{VBW}" height="{VBH}" fill="#ffffff"/>',
+         f'<rect x="0" y="{ywl}" width="{VBW}" height="{ybed - ywl}" fill="{WATER}"/>',
+         f'<pattern id="rcbed" width="10" height="10" patternUnits="userSpaceOnUse" patternTransform="rotate(45)">'
+         f'<line x1="0" y1="0" x2="0" y2="10" stroke="{SAND}" stroke-width="0.9"/></pattern>',
+         f'<rect x="0" y="{ybed}" width="{VBW}" height="{VBH - ybed}" fill="url(#rcbed)"/>',
+         f'<line x1="0" y1="{ybed}" x2="{VBW}" y2="{ybed}" stroke="{SAND}" stroke-width="1.6"/>',
+         f'<line x1="0" y1="{ywl}" x2="{VBW}" y2="{ywl}" stroke="{TEAL}" stroke-width="1.2"/>']
+    p.append(T(10, ywl - 6, "waterline", fill=TEAL, size=9))
+    p.append(T(VBW - 10, ybed + 18, "seabed / mudline", fill=SAND, size=9, anchor="end"))
+
+    # floating facility (shared), two hang-off points
+    fx = 545
+    p.append(f'<rect x="{fx - 42}" y="{ywl - 16}" width="84" height="16" fill="#e9eeef" stroke="{INK}" stroke-width="1.2"/>')
+    p.append(f'<line x1="{fx - 8}" y1="{ywl - 16}" x2="{fx - 8}" y2="{ywl - 34}" stroke="{INK}" stroke-width="1.1"/>')
+    p.append(f'<line x1="{fx + 8}" y1="{ywl - 16}" x2="{fx + 8}" y2="{ywl - 30}" stroke="{INK}" stroke-width="1.1"/>')
+    p.append(T(fx, ywl - 40, "Floating facility", fill=INK, size=10, anchor="middle", weight=600))
+    hopl, hopr = (fx - 30, ywl + 4), (fx + 30, ywl + 4)
+    for hp in (hopl, hopr):
+        p.append(f'<circle cx="{hp[0]}" cy="{hp[1]}" r="3" fill="{AMBER}"/>')
+    p.append(T(fx, ywl + 22, "Hang-Off Point (HOP)", fill=AMBER, size=9, anchor="middle"))
+
+    # left: plain steel catenary riser (SCR)
+    p.append(f'<path d="M{hopl[0]},{hopl[1]} C {hopl[0] - 40},{ywl + 150} {hopl[0] - 210},{ybed} 150,{ybed}" '
+             f'fill="none" stroke="{TEAL}" stroke-width="3" stroke-linecap="round"/>')
+    p.append(f'<line x1="150" y1="{ybed}" x2="120" y2="{ybed}" stroke="{TEAL}" stroke-width="3" stroke-linecap="round"/>')
+    p.append(f'<circle cx="150" cy="{ybed}" r="5" fill="none" stroke="{AMBER}" stroke-width="1.5"/>')
+    p.append(f'<circle cx="150" cy="{ybed}" r="2.2" fill="{AMBER}"/>')
+    p.append(T(300, 200, "Steel catenary riser (SCR)", fill=INK, size=11, weight=600))
+    p.append(T(150, ybed - 12, "Touch Down Point (TDP)", fill=AMBER, size=9, anchor="middle"))
+
+    # right: steel lazy-wave riser (SLWR) - upper / buoyancy (hog) / lower sections
+    slwr = (f'M{hopr[0]},{hopr[1]} C {hopr[0] + 55},{ywl + 170} {hopr[0] + 150},{ybed - 20} {hopr[0] + 205},{ybed - 22} '
+            f'C {hopr[0] + 250},{ybed - 24} {hopr[0] + 285},{ybed - 120} {hopr[0] + 330},{ybed - 118} '
+            f'C {hopr[0] + 375},{ybed - 116} {hopr[0] + 405},{ybed - 20} {hopr[0] + 430},{ybed}')
+    p.append(f'<path d="{slwr}" fill="none" stroke="{TEAL}" stroke-width="3" stroke-linecap="round"/>')
+    p.append(f'<line x1="{hopr[0] + 430}" y1="{ybed}" x2="{hopr[0] + 470}" y2="{ybed}" stroke="{TEAL}" stroke-width="3" stroke-linecap="round"/>')
+    # buoyancy modules along the hog crest
+    for i in range(6):
+        bxp = hopr[0] + 292 + i * 13
+        p.append(f'<ellipse cx="{bxp}" cy="{ybed - 118 - 5}" rx="6" ry="8" fill="#f2d38a" stroke="{AMBER}" stroke-width="1"/>')
+    p.append(f'<circle cx="{hopr[0] + 430}" cy="{ybed}" r="5" fill="none" stroke="{AMBER}" stroke-width="1.5"/>')
+    p.append(f'<circle cx="{hopr[0] + 430}" cy="{ybed}" r="2.2" fill="{AMBER}"/>')
+    p.append(T(hopr[0] + 60, ywl + 120, "Upper section", fill=INK2, size=9))
+    p.append(T(hopr[0] + 320, ybed - 138, "Buoyancy section (hog)", fill=INK2, size=9, anchor="middle"))
+    p.append(T(hopr[0] + 405, ybed - 70, "Lower section", fill=INK2, size=9))
+    p.append(T(hopr[0] + 250, 176, "Steel lazy-wave riser (SLWR)", fill=INK, size=11, weight=600))
+    p.append(T(hopr[0] + 430, ybed - 12, "TDP", fill=AMBER, size=9, anchor="middle"))
+
+    p.append(f'<rect x="0" y="{VBH - 22}" width="{VBW}" height="22" fill="#eef2f2"/>')
+    p.append(T(10, VBH - 7, "Illustrative riser configurations (schematic). The twin solves the plain SCR; "
+              "a lazy-wave / steep-wave configuration needs a dedicated solver.", fill=DIM, size=9.5))
     p.append("</svg>")
     return "".join(p)
 
@@ -2265,7 +2342,17 @@ if _section == "Structure":
             height=720, scrolling=False,
         )
         st.caption("The engineering GA drawing kept alongside the illustration: to-scale, with the "
-                   "turret / hang-off, riser pipe-section and TDP weld detail callouts and a title block.")
+                   "turret / hang-off, riser pipe-section (bonded material stack X65 / CRA / PP) and "
+                   "TDP weld detail callouts and a title block.")
+        st.markdown('<div class="sec">Riser configurations &middot; plain catenary vs steel lazy-wave '
+                    '<span class="tag amber">illustrative</span></div>', unsafe_allow_html=True)
+        components.html(
+            f'<div style="width:100%;background:#fff">{riser_config_svg()}</div>',
+            height=430, scrolling=False,
+        )
+        st.caption("The touchdown-point solver here models the plain SCR. A steel lazy-wave riser "
+                   "(SLWR) adds a buoyancy section (sag + hog) to decouple vessel motion from the TDP "
+                   "- shown schematically for context; it needs a dedicated lazy-wave solver.")
         st.markdown('<div class="sec" data-n="02">Static catenary configuration &middot; riser shape &amp; touchdown</div>',
                     unsafe_allow_html=True)
         gc1, gc2 = dcols([3, 2])
