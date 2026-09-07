@@ -119,13 +119,19 @@ class VivScreening:
 
 def effective_mass_per_length(
     section: PipeSection, *, contents_density: float, added_mass_coefficient: float = 1.0,
+    hydro_diameter: float | None = None, extra_mass_per_length: float = 0.0,
 ) -> float:
-    """Wet mass per unit length [kg/m]: steel + contents + hydrodynamic added mass."""
-    a_disp = np.pi / 4.0 * section.outer_diameter**2
+    """Wet mass per unit length [kg/m]: steel + contents + added mass + marine growth.
+
+    ``hydro_diameter`` (default the steel OD) sets the added-mass displaced area;
+    ``extra_mass_per_length`` adds the marine-growth structural mass.
+    """
+    d_hydro = hydro_diameter if hydro_diameter is not None else section.outer_diameter
+    a_disp = np.pi / 4.0 * d_hydro**2
     m_steel = section.steel_area * RHO_STEEL
     m_content = section.bore_area * contents_density
     m_added = added_mass_coefficient * RHO_SEAWATER * a_disp
-    return float(m_steel + m_content + m_added)
+    return float(m_steel + m_content + m_added + extra_mass_per_length)
 
 
 def riser_modes(
@@ -136,6 +142,8 @@ def riser_modes(
     added_mass_coefficient: float = 1.0,
     n_modes: int = 8,
     n_nodes: int = 240,
+    hydro_diameter: float | None = None,
+    extra_mass_per_length: float = 0.0,
 ) -> RiserModes:
     """Cross-flow modes of the suspended span as a tensioned Euler-Bernoulli beam.
 
@@ -149,7 +157,8 @@ def riser_modes(
     """
     ei = section.bending_stiffness
     m = effective_mass_per_length(
-        section, contents_density=contents_density, added_mass_coefficient=added_mass_coefficient
+        section, contents_density=contents_density, added_mass_coefficient=added_mass_coefficient,
+        hydro_diameter=hydro_diameter, extra_mass_per_length=extra_mass_per_length,
     )
     length = catenary.arc_length
     # Interior nodes (phi = 0 at both ends). Map arc nodes to horizontal x for the
@@ -239,6 +248,8 @@ def viv_screening(
     damping_ratio: float = 0.02,
     n_modes: int = 60,
     thickness_m: float | None = None,
+    marine_growth_thickness_m: float = 0.0,
+    marine_growth_mass_per_length: float = 0.0,
 ) -> VivScreening:
     """Screen the SCR for cross-flow VIV fatigue over the excited modes.
 
@@ -250,17 +261,23 @@ def viv_screening(
     (``fn ~ St U/D``), enough modes are computed to reach the shedding frequency.
     Badged as a screening estimate.
     """
+    # Marine growth increases the hydrodynamic diameter (drag / added mass / lock-in)
+    # and the mass, but NOT the steel section that carries the bending stress.
+    d_hydro = section.outer_diameter + 2.0 * marine_growth_thickness_m
     modes = riser_modes(
         catenary, section, contents_density=contents_density,
         added_mass_coefficient=added_mass_coefficient, n_modes=n_modes,
         n_nodes=max(300, 12 * n_modes),
+        hydro_diameter=d_hydro, extra_mass_per_length=marine_growth_mass_per_length,
     )
     m_eff = effective_mass_per_length(
-        section, contents_density=contents_density, added_mass_coefficient=added_mass_coefficient
+        section, contents_density=contents_density, added_mass_coefficient=added_mass_coefficient,
+        hydro_diameter=d_hydro, extra_mass_per_length=marine_growth_mass_per_length,
     )
-    ks = stability_parameter(m_eff, damping_ratio, section.outer_diameter)
+    ks = stability_parameter(m_eff, damping_ratio, d_hydro)
     a_over_d_peak = griffin_amplitude(ks)
-    d_out = section.outer_diameter
+    d_out = d_hydro                       # lock-in / reduced velocity / amplitude
+    d_steel = section.outer_diameter      # bending stress uses the steel section
     e_mod = section.youngs_modulus
 
     # Current at each node's height above the seabed. Height ~ catenary shape y(x).
@@ -285,10 +302,10 @@ def viv_screening(
         stress_range_pa = 0.0
         rate = 0.0
         if excited:
-            amplitude = a_over_d * d_out  # cross-flow displacement amplitude [m]
+            amplitude = a_over_d * d_out  # cross-flow displacement amplitude ~ hydro D [m]
             max_curv = float(np.max(np.abs(modes.curvatures[i])))  # per unit peak disp
-            # Stress amplitude = E (D/2) * curvature_amplitude; range = 2*amplitude.
-            stress_amp_pa = e_mod * (d_out / 2.0) * amplitude * max_curv
+            # Stress amplitude = E (D_steel/2) * curvature_amplitude; range = 2*amplitude.
+            stress_amp_pa = e_mod * (d_steel / 2.0) * amplitude * max_curv
             stress_range_pa = 2.0 * stress_amp_pa
             n_fail = float(cycles_to_failure(
                 np.array([stress_range_pa]), curve, thickness_m=thickness_m)[0])

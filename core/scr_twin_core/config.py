@@ -246,6 +246,9 @@ class VivConfig(BaseModel):
     damping_ratio: float = Field(default=0.02, gt=0.0, le=0.2, description="Structural+hydro damping ratio")
     added_mass_coefficient: float = Field(default=1.0, ge=0.0, le=3.0)
     n_modes: int = Field(default=60, ge=4, le=200, description="Cross-flow modes to resolve")
+    marine_growth_thickness: float = Field(
+        default=0.0, ge=0.0, le=0.3, description="Marine-growth thickness [m] (DNV-RP-C205); 0 disables")
+    marine_growth_density: float = Field(default=1300.0, gt=0.0, le=2000.0, description="Growth density [kg/m^3]")
 
 
 class AnalysisConfig(BaseModel):

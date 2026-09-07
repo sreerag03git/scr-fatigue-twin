@@ -35,11 +35,13 @@ from scr_twin_core.inspection import (
 )
 from scr_twin_core.miner import SECONDS_PER_YEAR
 from scr_twin_core.pipeline import FullResult, long_term_fatigue, run_full_analysis
+from scr_twin_core.marine_growth import MarineGrowth
 from scr_twin_core.reliability import form_fatigue_reliability
 from scr_twin_core.seabed import boundary_layer_length, seabed_sensitivity
 from scr_twin_core.sn import get_curve
 from scr_twin_core.scatter import ScatterDiagram, example_scatter_diagram, load_scatter_csv
 from scr_twin_core.viv import CurrentProfile, viv_screening
+from scr_twin_core.rao import VesselRAO, load_rao_csv
 from scr_twin_core.synthetic import synthetic_mru_6dof, synthetic_mru_motion
 from scr_twin_core.transfer import InterpolatedTransferFunction, load_transfer_csv
 
@@ -241,12 +243,15 @@ def _viv_payload(config: AnalysisConfig) -> dict[str, Any]:
     base = get_curve(riser.sn_class, riser.sn_environment)
     curve = correction.apply_to_curve(base) if correction is not None else base
     current = CurrentProfile(vc.surface_current, riser.water_depth, vc.profile_exponent)
+    mg = MarineGrowth(thickness_m=vc.marine_growth_thickness, density_kg_m3=vc.marine_growth_density)
+    mg_mass = mg.mass_per_length(riser.outer_diameter) if mg.enabled else 0.0
     sc = viv_screening(
         catenary, section, curve, current,
         contents_density=riser.contents_density,
         added_mass_coefficient=vc.added_mass_coefficient, strouhal=vc.strouhal,
         damping_ratio=vc.damping_ratio, n_modes=vc.n_modes,
         thickness_m=riser.thickness_for_correction,
+        marine_growth_thickness_m=mg.thickness_m, marine_growth_mass_per_length=mg_mass,
     )
     rm = sc.riser_modes
     dom_idx = max(sc.dominant_mode - 1, 0)
@@ -264,6 +269,15 @@ def _viv_payload(config: AnalysisConfig) -> dict[str, Any]:
         "current_profile": {
             "height": [float(h) for h in heights],
             "speed": [float(v) for v in current.speed_at_height(heights)],
+        },
+        "marine_growth": {
+            "enabled": mg.enabled,
+            "thickness_mm": mg.thickness_m * 1e3,
+            "density": mg.density_kg_m3,
+            "effective_diameter_mm": mg.effective_diameter(riser.outer_diameter) * 1e3,
+            "base_diameter_mm": riser.outer_diameter * 1e3,
+            "mass_per_length": mg_mass,
+            "submerged_weight_per_length": mg.submerged_weight_per_length(riser.outer_diameter) if mg.enabled else 0.0,
         },
     })
     return payload
@@ -383,6 +397,7 @@ def analyze(
     imported_tf: InterpolatedTransferFunction | None = None,
     channels: dict[str, np.ndarray] | None = None,
     scatter_diagram: ScatterDiagram | None = None,
+    motion_provenance: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     """Run the full chain and assemble the complete dashboard payload.
 
@@ -422,6 +437,10 @@ def analyze(
         "sea_state": {
             "hs": result.sea_state.hs, "tp": result.sea_state.tp,
             "tz": result.sea_state.tz, "gamma": result.sea_state.gamma,
+        },
+        "motion": motion_provenance or {
+            "source": "synthetic (illustrative RAO)" if is_synthetic else "measured MRU",
+            "is_validated": not is_synthetic,
         },
         "spectrum": _spectrum_payload(result),
         "transfer": _transfer_payload(result),
@@ -489,6 +508,19 @@ def make_synthetic_6dof(
         duration=duration, fs=fs, hs=hs, tp=tp, gamma=gamma, seed=seed, heading_deg=heading_deg
     )
     return m.channels, m.fs
+
+
+def load_rao(data: bytes | str) -> VesselRAO:
+    """Parse an uploaded vessel-RAO CSV into a VesselRAO (raises loudly on bad input)."""
+    return load_rao_csv(data)
+
+
+def make_motion_from_rao(
+    vessel_rao: VesselRAO, hs: float, tp: float, gamma: float, duration: float, fs: float, seed: int,
+) -> tuple[dict[str, np.ndarray], float]:
+    """6-DOF motion from a validated RAO x a JONSWAP wave field (channels dict + fs)."""
+    channels = vessel_rao.synthesize(hs=hs, tp=tp, gamma=gamma, duration=duration, fs=fs, seed=seed)
+    return channels, fs
 
 
 def stream_seconds_per_year() -> float:
