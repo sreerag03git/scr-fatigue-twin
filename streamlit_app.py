@@ -308,11 +308,22 @@ def _scatter_diagram(scatter_bytes: bytes | None):
         return None, f"Invalid scatter-diagram CSV - {exc}"
 
 
+def _vessel_rao(rao_bytes: bytes | None):
+    """Parse an uploaded vessel-RAO CSV, or None to use the illustrative generator."""
+    if not rao_bytes:
+        return None, None
+    try:
+        return service.load_rao(rao_bytes), None
+    except ValueError as exc:
+        return None, f"Invalid vessel-RAO CSV - {exc}"
+
+
 @st.cache_data(show_spinner=False)
 def analyze_synthetic(config_json: str, hs: float, tp: float, gamma: float,
                       duration: float, fs: float, seed: int, heading: float,
                       transfer_bytes: bytes | None = None,
-                      scatter_bytes: bytes | None = None) -> dict:
+                      scatter_bytes: bytes | None = None,
+                      rao_bytes: bytes | None = None) -> dict:
     cfg = AnalysisConfig.model_validate_json(config_json)
     tf, err = _imported_tf(cfg, transfer_bytes)
     if err:
@@ -320,9 +331,20 @@ def analyze_synthetic(config_json: str, hs: float, tp: float, gamma: float,
     diagram, serr = _scatter_diagram(scatter_bytes)
     if serr:
         return {"error": serr}
-    channels, fsr = service.make_synthetic_6dof(hs, tp, gamma, duration, fs, seed, heading)
+    vessel_rao, rerr = _vessel_rao(rao_bytes)
+    if rerr:
+        return {"error": rerr}
+    if vessel_rao is not None:
+        channels, fsr = service.make_motion_from_rao(vessel_rao, hs, tp, gamma, duration, fs, seed)
+        _p = vessel_rao.provenance.as_dict()
+        motion_prov = {"source": f"validated RAO ({_p['source_tool']})", "is_validated": True,
+                       "provenance": _p}
+    else:
+        channels, fsr = service.make_synthetic_6dof(hs, tp, gamma, duration, fs, seed, heading)
+        motion_prov = {"source": "synthetic (illustrative RAO)", "is_validated": False}
     return service.analyze(cfg, channels["heave"], fsr, is_synthetic=True,
-                           imported_tf=tf, channels=channels, scatter_diagram=diagram)
+                           imported_tf=tf, channels=channels, scatter_diagram=diagram,
+                           motion_provenance=motion_prov)
 
 
 @st.cache_data(show_spinner=False)
@@ -1327,6 +1349,13 @@ if source.startswith("Synthetic"):
     synth["heading"] = st.sidebar.slider(
         "Wave heading [deg] (0 = head, 90 = beam)", 0.0, 90.0, 20.0, 5.0,
         help="Drives the 6-DOF mix: head seas -> pitch/heave/surge; beam -> roll/sway.")
+    _rao_up = st.sidebar.file_uploader("Validated vessel RAO CSV (optional)", type=["csv"], key="rao_csv")
+    rao_bytes: bytes | None = _rao_up.getvalue() if _rao_up is not None else None
+    if rao_bytes:
+        st.sidebar.caption("Motion built from your **validated RAO** x the wave spectrum (badged).")
+    else:
+        st.sidebar.caption("Columns `freq_hz, heave_mag, heave_phase_deg, pitch_mag, ...`. "
+                           "Without one, the built-in **illustrative** RAOs are used.")
 else:
     up = st.sidebar.file_uploader("MRU CSV (time + heave/pitch...)", type=["csv"])
     if up is not None:
@@ -1474,7 +1503,7 @@ run_clicked = run_col.button("▶  Run analysis", type="primary", width="stretch
 if is_synth:
     payload = analyze_synthetic(cfg.model_dump_json(), synth["hs"], synth["tp"], synth["gamma"],
                                 synth["duration"], synth["fs"], int(synth["seed"]),
-                                synth["heading"], transfer_bytes, scatter_bytes)
+                                synth["heading"], transfer_bytes, scatter_bytes, rao_bytes)
 elif upload_bytes is not None:
     payload = analyze_upload(cfg.model_dump_json(), upload_bytes, transfer_bytes, scatter_bytes)
 else:
@@ -1814,7 +1843,11 @@ with tab_env:
 with tab_sense:
     st.caption("From the vessel MRU recording to the touchdown stress: 6-DOF hang-off "
                "resolution and the motion&rarr;stress transfer function.")
-    st.markdown('<div class="sec">MRU hang-off motion (measured / synthetic)</div>', unsafe_allow_html=True)
+    _mot = payload.get("motion", {})
+    _mbadge = ('<span class="tag pass">VALIDATED motion</span>' if _mot.get("is_validated")
+               else '<span class="tag syn">ILLUSTRATIVE motion</span>')
+    st.markdown(f'<div class="sec">MRU hang-off motion &middot; {_mbadge} '
+                f'<span class="foot">{_mot.get("source", "")}</span></div>', unsafe_allow_html=True)
     tf_trace = _fig(200)
     tf_trace.add_scatter(x=payload["trace"]["time"], y=payload["trace"]["heave"],
                          line=dict(color=SIGNAL, width=1))
