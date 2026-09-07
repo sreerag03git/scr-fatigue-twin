@@ -567,7 +567,14 @@ def econ_fig(econ: dict) -> go.Figure:
 
 def catenary_fig(cat: dict) -> go.Figure:
     """Static catenary profile: riser shape from the TDP (origin) to the hang-off."""
-    f = _fig(250)
+    f = _fig(260)
+    _wd = cat["water_depth"]
+    f.add_hline(y=_wd, line=dict(color=SIGNAL, width=1.0, dash="dot"),
+                annotation_text="MWL", annotation_font_size=9, annotation_font_color=SIGNAL,
+                annotation_position="top left")
+    f.add_hline(y=0.0, line=dict(color=AMBER, width=1.2),
+                annotation_text="seabed / TDP", annotation_font_size=9, annotation_font_color=AMBER,
+                annotation_position="bottom right")
     f.add_scatter(x=cat["x"], y=cat["y"], line=dict(color=SIGNAL2, width=2.4),
                   fill="tozeroy", fillcolor="rgba(15,143,156,0.06)", name="riser")
     f.add_scatter(x=[0.0], y=[0.0], mode="markers+text", text=["TDP"], textposition="top right",
@@ -1560,6 +1567,76 @@ if not st.session_state.launched:
 
 
 # --------------------------------------------------------------------------- #
+# Console layout: left-rail section nav + header + remaining-life hero
+# --------------------------------------------------------------------------- #
+st.markdown(
+    """
+    <style>
+      /* --- left-rail section navigation --- */
+      .navtitle { font-size:10px; font-weight:600; letter-spacing:.14em; text-transform:uppercase;
+        color:var(--muted); margin:2px 0 8px 2px; }
+      .st-key-navsec [role="radiogroup"] { gap:3px; }
+      .st-key-navsec [role="radiogroup"] > label { display:flex; align-items:center; padding:8px 12px;
+        border-radius:8px; margin:0; border:1px solid transparent; cursor:pointer;
+        transition:background .13s ease, border-color .13s ease; }
+      .st-key-navsec [role="radiogroup"] > label:hover { background:var(--panel); }
+      .st-key-navsec [role="radiogroup"] > label > div:first-child { display:none; }
+      .st-key-navsec [role="radiogroup"] > label p { font-size:13.5px !important; font-weight:500;
+        color:var(--sub) !important; }
+      .st-key-navsec [role="radiogroup"] > label:has(input:checked),
+      .st-key-navsec [role="radiogroup"] > label:has([aria-checked="true"]) {
+        background:var(--panel); border-color:var(--line2); box-shadow:var(--shadow-sm); }
+      .st-key-navsec [role="radiogroup"] > label:has(input:checked) p,
+      .st-key-navsec [role="radiogroup"] > label:has([aria-checked="true"]) p {
+        color:var(--accent) !important; font-weight:600; }
+      .navrule { border:none; border-top:1px solid var(--line); margin:14px 0 10px; }
+
+      /* --- remaining-life hero --- */
+      .hero { display:grid; grid-template-columns:1.25fr 2fr; gap:22px; background:var(--panel);
+        border:1px solid var(--line); border-radius:var(--r); box-shadow:var(--shadow);
+        padding:20px 24px; margin:4px 0 16px; }
+      .hero-main { border-right:1px solid var(--line); padding-right:22px; }
+      .hero-top { display:flex; align-items:center; gap:12px; margin-bottom:6px; }
+      .hero-lab { font-size:10.5px; font-weight:600; letter-spacing:.09em; text-transform:uppercase; color:var(--muted); }
+      .hero-life { font-size:58px; font-weight:700; letter-spacing:-.035em; line-height:1;
+        margin:6px 0 2px; font-variant-numeric:tabular-nums; color:var(--ink); }
+      .hero-life.sig { color:var(--accent); } .hero-life.alarm { color:var(--alarm); }
+      .hero-life span { font-size:20px; font-weight:500; color:var(--muted); margin-left:7px; }
+      .gauge { position:relative; height:8px; background:var(--panel2); border-radius:5px; margin:14px 0 8px; }
+      .gauge-fill { position:absolute; top:0; left:0; height:100%; border-radius:5px; background:var(--accent); }
+      .gauge-fill.alarm { background:var(--alarm); }
+      .gauge-req { position:absolute; top:-4px; width:2px; height:16px; background:var(--ink); }
+      .gauge-cap { font-size:11px; color:var(--sub); }
+      .hbadge { display:inline-block; font-size:11.5px; font-weight:600; padding:3px 12px; border-radius:100px; }
+      .hbadge.pass { color:var(--good); background:color-mix(in srgb,var(--good) 12%,transparent); }
+      .hbadge.fail { color:var(--alarm); background:color-mix(in srgb,var(--alarm) 12%,transparent); }
+      .hero-stats { display:grid; grid-template-columns:repeat(2,1fr); gap:14px 26px; align-content:center; }
+      .hstat .k { font-size:9.5px; font-weight:600; letter-spacing:.07em; text-transform:uppercase; color:var(--muted); }
+      .hstat .v { font-size:23px; font-weight:600; letter-spacing:-.01em; font-variant-numeric:tabular-nums;
+        color:var(--ink); margin-top:3px; }
+      .hstat .v small { font-size:12px; color:var(--muted); font-weight:500; margin-left:3px; }
+      .hstat .v.sig { color:var(--accent); } .hstat .v.amber { color:var(--amber); } .hstat .v.alarm { color:var(--alarm); }
+      @media (max-width:820px){ .hero{ grid-template-columns:1fr; } .hero-main{ border-right:none;
+        border-bottom:1px solid var(--line); padding-right:0; padding-bottom:16px; } }
+
+      /* --- section title band --- */
+      .sectionhead { display:flex; align-items:baseline; gap:12px; margin:4px 0 14px; }
+      .sectionhead .sx { font-family:var(--mono); font-size:12px; color:var(--accent); font-weight:500; }
+      .sectionhead .st { font-size:19px; font-weight:600; letter-spacing:-.01em; color:var(--ink); }
+      .sectionhead .sd { font-size:12.5px; color:var(--muted); margin-left:auto; }
+    </style>
+    """,
+    unsafe_allow_html=True,
+)
+
+NAV_SECTIONS = ["Overview", "Structure", "Environment", "Sensing", "Detection",
+                "Assimilation", "Economics", "Ledger", "Provenance"]
+st.sidebar.markdown('<div class="navtitle">Sections</div>', unsafe_allow_html=True)
+_section = st.sidebar.radio("Section", NAV_SECTIONS, label_visibility="collapsed", key="navsec")
+st.sidebar.markdown('<hr class="navrule"/>', unsafe_allow_html=True)
+
+
+# --------------------------------------------------------------------------- #
 # Sidebar - data source + configuration
 # --------------------------------------------------------------------------- #
 st.sidebar.markdown("### Data source")
@@ -1871,20 +1948,41 @@ _seabed = payload.get("seabed")
 _dfan = payload.get("divergence_fan")
 _comb_life = _comb["life_years"] if _comb else dmg["deterministic_life_years"]
 
-tab_over, tab_struct, tab_env, tab_sense, tab_detect, tab_assim, tab_econ, tab_ledger, tab_prov = st.tabs(
-    ["Overview", "Structure", "Environment", "Sensing", "Detection",
-     "Assimilation", "Economics", "Ledger", "Provenance"]
+# --------------------------------------------------------------------------- #
+# Remaining-life hero (always visible; section content is gated by the nav rail)
+# --------------------------------------------------------------------------- #
+_req_life = _r.design_fatigue_factor * _r.design_service_life_years
+_p50, _p10 = post["p50"], post["p10"]
+_passes = _acc["passes"] if _acc else (_p50 >= _req_life)
+_util = _acc["utilisation"] if _acc else (_req_life / _p50 if _p50 else 0.0)
+_gmax = max(_p50, _req_life, 1e-6) * 1.2
+_fill = max(2.0, min(100.0, 100.0 * _p50 / _gmax))
+_reqx = max(0.0, min(100.0, 100.0 * _req_life / _gmax))
+_tone = "sig" if _passes else "alarm"
+st.markdown(
+    '<div class="hero"><div class="hero-main">'
+    '<div class="hero-top"><span class="hero-lab">Remaining fatigue life &middot; P50</span>'
+    f'<span class="hbadge {"pass" if _passes else "fail"}">{"ACCEPTABLE" if _passes else "BELOW TARGET"}</span></div>'
+    f'<div class="hero-life {_tone}">{life(_p50)}<span>yr</span></div>'
+    f'<div class="gauge"><div class="gauge-fill {_tone}" style="width:{_fill:.1f}%"></div>'
+    f'<div class="gauge-req" style="left:{_reqx:.1f}%"></div></div>'
+    f'<div class="gauge-cap">required (DFF &times; design) = {life(_req_life)} yr'
+    f' &middot; utilisation {_util:.2f} &middot; DFF {_r.design_fatigue_factor:.0f}&times;</div>'
+    '</div><div class="hero-stats">'
+    f'<div class="hstat"><div class="k">Deterministic life</div><div class="v sig">{life(dmg["deterministic_life_years"])}<small>yr</small></div></div>'
+    f'<div class="hstat"><div class="k">Combined wave + VIV</div><div class="v">{life(_comb_life)}<small>yr</small></div></div>'
+    f'<div class="hstat"><div class="k">P10 conservative</div><div class="v amber">{life(_p10)}<small>yr</small></div></div>'
+    f'<div class="hstat"><div class="k">Next inspection</div><div class="v sig">{insp["next_inspection_year"]:.1f}<small>yr</small></div></div>'
+    '</div></div>',
+    unsafe_allow_html=True,
 )
 
 # ========================== OVERVIEW ======================================= #
-with tab_over:
-    st.markdown(kpi_row([
-        kpi("Deterministic life", life(dmg["deterministic_life_years"]), "yr", "sig"),
-        kpi("Combined wave+VIV life", life(_comb_life), "yr", "sig"),
-        kpi("P10 (conservative)", life(post["p10"]), "yr", "amber"),
-        kpi("P50 median", life(post["p50"]), "yr"),
-        kpi("Next inspection", f'{insp["next_inspection_year"]:.1f}', "yr", "sig"),
-    ]), unsafe_allow_html=True)
+if _section == "Overview":
+    st.markdown('<div class="sectionhead"><span class="sx">01</span>'
+                '<span class="st">Acceptance &amp; headline result</span>'
+                '<span class="sd">DNV-OS-F201 design-fatigue-factor check</span></div>',
+                unsafe_allow_html=True)
     if _acc is not None:
         _env_label = {"in_air": "in air", "seawater_cp": "seawater w/ CP"}.get(
             dmg.get("sn_environment", "in_air"), dmg.get("sn_environment", "in_air"))
@@ -1909,7 +2007,7 @@ with tab_over:
                     height=316, scrolling=False)
 
 # ========================== STRUCTURE ====================================== #
-with tab_struct:
+if _section == "Structure":
     st.caption("Riser geometry and structural response: the solved catenary and the "
                "cross-flow modal shapes that carry VIV.")
     st.markdown('<div class="eq">y(x) = a&#183;(cosh(x/a) &minus; 1),&nbsp; a = H/w,&nbsp; '
@@ -2011,7 +2109,7 @@ with tab_struct:
                        "(or a nonlinear soil model) narrows it.")
 
 # ========================== ENVIRONMENT ==================================== #
-with tab_env:
+if _section == "Environment":
     st.caption("The metocean loading: the identified sea state, the spectra, and the "
                "long-term wave scatter climate that drives fatigue.")
     st.markdown(kpi_row([
@@ -2085,7 +2183,7 @@ with tab_env:
              for c in _lt["contributions"][:12]], value_cols=(0, 1, 2, 3, 4)), unsafe_allow_html=True)
 
 # ========================== SENSING ======================================== #
-with tab_sense:
+if _section == "Sensing":
     st.caption("From the vessel MRU recording to the touchdown stress: 6-DOF hang-off "
                "resolution and the motion&rarr;stress transfer function.")
     _mot = payload.get("motion", {})
@@ -2158,7 +2256,7 @@ with tab_sense:
             unsafe_allow_html=True)
 
 # ========================== DETECTION ====================================== #
-with tab_detect:
+if _section == "Detection":
     st.caption("Damage detection: rainflow + S-N + Miner, the spectral cross-check, and "
                "the VIV screening - the mechanisms that consume fatigue life.")
     st.markdown('<div class="eq">D = &#8721;<sub>i</sub> n<sub>i</sub>/N(&#916;&#963;<sub>i</sub>),&nbsp; '
@@ -2270,7 +2368,7 @@ with tab_detect:
                    "(high-R tensioned riser). Design ECA needs the full BS 7910 2-D a/c integration.")
 
 # ========================== ASSIMILATION =================================== #
-with tab_assim:
+if _section == "Assimilation":
     st.caption("Probabilistic remaining life: the Monte Carlo posterior, the Bayesian "
                "contraction as monitoring accrues, and the design-vs-actual divergence.")
     st.markdown('<div class="eq">&#955; ~ &#928;<sub>k</sub> m<sub>k</sub>&#183;&#955;&#8320;,&nbsp; '
@@ -2335,7 +2433,7 @@ with tab_assim:
             st.caption("AR(1) wave-climate Monte Carlo. Spec gate: P10≈5%, P90≈28% at year 15.")
 
 # ========================== ECONOMICS ====================================== #
-with tab_econ:
+if _section == "Economics":
     st.caption("The inspection decision and the conditional value of monitoring.")
     st.markdown('<div class="eq">&#916;C = &#8721;<sub>t</sub> [C<sub>base</sub>&minus;C<sub>cbm</sub>]/(1+r)<sup>t</sup> '
                 '&minus; C<sub>sensor</sub>,&nbsp; C<sub>cbm</sub> = &#966;&#183;PV<sub>slow</sub> + '
@@ -2388,7 +2486,7 @@ with tab_econ:
         value_cols=(1,)), unsafe_allow_html=True)
 
 # ========================== LEDGER ========================================= #
-with tab_ledger:
+if _section == "Ledger":
     st.caption("The auditable results ledger - every headline number with the standard it "
                "rests on, for this exact run.")
     _rows = [
@@ -2426,7 +2524,7 @@ with tab_ledger:
         value_cols=(1,)), unsafe_allow_html=True)
 
 # ========================== PROVENANCE ===================================== #
-with tab_prov:
+if _section == "Provenance":
     st.caption("Reproducibility and verification: the acceptance gates and the exact "
                "inputs / library versions behind this run, plus downloadable reports.")
     st.markdown(f'<div class="sec" data-n="01">Acceptance gates &middot; {gates_ok}/{len(g)} passing '
