@@ -1,10 +1,10 @@
-# Precision-engineering light theme for the shareable SCR-Twin console.
+# Premium minimalist light theme for the shareable SCR-Twin console.
 [theme]
 base = "light"
-primaryColor = "#0b7d84"
-backgroundColor = "#e9edee"
+primaryColor = "#0e7c82"
+backgroundColor = "#f4f6f6"
 secondaryBackgroundColor = "#ffffff"
-textColor = "#16232a"
+textColor = "#17242b"
 font = "sans serif"
 
 [server]

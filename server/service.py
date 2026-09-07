@@ -283,6 +283,54 @@ def _viv_payload(config: AnalysisConfig) -> dict[str, Any]:
     return payload
 
 
+def viv_life_sweep(config: AnalysisConfig, thicknesses_m: list[float]) -> dict[str, Any]:
+    """VIV screening fatigue life across a range of marine-growth thicknesses.
+
+    Rebuilds the VIV inputs once (catenary / section / current) and re-runs the
+    DNV-RP-F204 screen per thickness - the same physics as :func:`_viv_payload`.
+    Powers the Detection-tab live knock-down curve. Returns ``enabled: False``
+    when no current is set (VIV inactive).
+    """
+    vc = config.viv
+    if vc.surface_current <= 0.0:
+        return {"enabled": False, "thickness_mm": [], "life_years": []}
+    riser = config.riser
+    section = riser.pipe_section()
+    catenary = riser.catenary()
+    correction = config.environment.correction()
+    base = get_curve(riser.sn_class, riser.sn_environment)
+    curve = correction.apply_to_curve(base) if correction is not None else base
+    current = CurrentProfile(vc.surface_current, riser.water_depth, vc.profile_exponent)
+    thk_mm: list[float] = []
+    life: list[float] = []
+    deff_mm: list[float] = []
+    add_mass: list[float] = []
+    for t in thicknesses_m:
+        mg = MarineGrowth(thickness_m=float(t), density_kg_m3=vc.marine_growth_density)
+        mg_mass = mg.mass_per_length(riser.outer_diameter) if mg.enabled else 0.0
+        sc = viv_screening(
+            catenary, section, curve, current,
+            contents_density=riser.contents_density,
+            added_mass_coefficient=vc.added_mass_coefficient, strouhal=vc.strouhal,
+            damping_ratio=vc.damping_ratio, n_modes=vc.n_modes,
+            thickness_m=riser.thickness_for_correction,
+            marine_growth_thickness_m=mg.thickness_m, marine_growth_mass_per_length=mg_mass,
+        )
+        thk_mm.append(round(float(t) * 1e3, 3))
+        life.append(float(sc.life_years))
+        deff_mm.append(mg.effective_diameter(riser.outer_diameter) * 1e3)
+        add_mass.append(mg_mass)
+    return {
+        "enabled": True,
+        "thickness_mm": thk_mm,
+        "life_years": life,
+        "effective_diameter_mm": deff_mm,
+        "added_mass": add_mass,
+        "current_thickness_mm": vc.marine_growth_thickness * 1e3,
+        "design_life_years": riser.design_service_life_years,
+    }
+
+
 def _seabed_payload(config: AnalysisConfig, result: FullResult) -> dict[str, Any]:
     """Seabed-stiffness fatigue sensitivity about the (conservative) rigid base."""
     section = config.riser.pipe_section()
