@@ -58,9 +58,9 @@ from server import service  # noqa: E402
 # --------------------------------------------------------------------------- #
 # Palette / theme
 # --------------------------------------------------------------------------- #
-SIGNAL, SIGNAL2, AMBER, ALARM = "#10a2aa", "#0b7d84", "#b47d16", "#c0432f"
-GRID, TEXT, TEXTHI, PAPER = "#e3e9ea", "#4d626b", "#16232a", "rgba(0,0,0,0)"
-GOOD = "#1f8a5b"
+SIGNAL, SIGNAL2, AMBER, ALARM = "#16a6ac", "#0e7c82", "#b07d1a", "#c0523f"
+GRID, TEXT, TEXTHI, PAPER = "#eaeeef", "#586a71", "#17242b", "rgba(0,0,0,0)"
+GOOD = "#2f855a"
 SN_CLASSES = ["B1", "B2", "C", "C1", "C2", "D", "E", "F", "F1", "F3", "G"]
 
 # Mobile mode is read *before* the first render command so the page layout and
@@ -71,7 +71,10 @@ MOBILE = bool(st.session_state["mobile"])
 
 st.set_page_config(
     page_title="SCR-Twin - TDP Fatigue Integrity Console",
-    page_icon="📈",
+    page_icon=("data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'>"
+               "<rect width='32' height='32' rx='7' fill='%230e7c82'/>"
+               "<path d='M6 10 Q16 26 26 10' fill='none' stroke='white' stroke-width='2.4' "
+               "stroke-linecap='round'/></svg>"),
     layout="centered" if MOBILE else "wide",
     initial_sidebar_state="collapsed" if MOBILE else "expanded",
 )
@@ -79,137 +82,147 @@ st.set_page_config(
 st.markdown(
     """
     <style>
-      @import url('https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500;600&display=swap');
+      @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500&display=swap');
       :root {
-        --bg:#e9edee; --panel:#ffffff; --panel2:#f4f7f8; --ink:#16232a; --sub:#4d626b;
-        --muted:#90a3ab; --line:#dbe3e6; --line2:#c3ced3; --accent:#0b7d84; --accent2:#10a2aa;
-        --amber:#b47d16; --alarm:#c0432f; --good:#1f8a5b; --wash:rgba(11,125,132,0.06);
+        --bg:#f4f6f6; --panel:#ffffff; --panel2:#eef2f2; --ink:#17242b; --sub:#586a71;
+        --muted:#93a3a9; --line:#e7ecec; --line2:#d6dedf; --accent:#0e7c82; --accent2:#16a6ac;
+        --amber:#b07d1a; --alarm:#c0523f; --good:#2f855a; --wash:rgba(14,124,130,0.055);
         --mono:'IBM Plex Mono','JetBrains Mono',Consolas,monospace;
-        --sans:'IBM Plex Sans','Segoe UI',system-ui,sans-serif;
+        --sans:'Inter','Segoe UI',system-ui,-apple-system,sans-serif;
+        --shadow:0 1px 2px rgba(23,36,43,0.04), 0 6px 22px rgba(23,36,43,0.05);
+        --shadow-sm:0 1px 2px rgba(23,36,43,0.05);
+        --r:9px;
       }
       html, body, .stApp, [class*="css"], p, span, div, label { font-family:var(--sans); }
-      .stApp { color:var(--ink);
-        background-color:var(--bg);
-        background-image:
-          linear-gradient(rgba(11,125,132,0.030) 1px, transparent 1px),
-          linear-gradient(90deg, rgba(11,125,132,0.030) 1px, transparent 1px);
-        background-size:30px 30px; }
+      .stApp { color:var(--ink); background-color:var(--bg); }
       [data-testid="stHeader"] { background:transparent; }
-      [data-testid="stMainBlockContainer"], .block-container { max-width:1220px; padding-top:2.4rem; }
-      h1,h2,h3,h4 { letter-spacing:.01em; color:var(--ink); font-weight:600; }
-      .mono, code, [data-testid="stMetricValue"] { font-family:var(--mono) !important; }
-      ::-webkit-scrollbar { width:9px; height:9px; }
-      ::-webkit-scrollbar-thumb { background:#c3ced3; border-radius:0; }
+      [data-testid="stMainBlockContainer"], .block-container { max-width:1180px; padding-top:2.2rem; }
+      h1,h2,h3,h4 { letter-spacing:-.01em; color:var(--ink); font-weight:600; }
+      .mono, code { font-family:var(--mono) !important; }
+      [data-testid="stMetricValue"] { font-family:var(--sans) !important; font-variant-numeric:tabular-nums; }
+      ::-webkit-scrollbar { width:10px; height:10px; }
+      ::-webkit-scrollbar-thumb { background:#cdd6d7; border-radius:6px; }
+      ::-webkit-scrollbar-thumb:hover { background:#b9c4c6; }
       ::-webkit-scrollbar-track { background:transparent; }
 
-      /* ---- Masthead / engineering title block ---- */
-      .titleblock { display:grid; grid-template-columns:2.3fr repeat(4,1fr); border:1.4px solid var(--ink);
-        background:var(--panel); margin:0 0 6px; box-shadow:0 1px 0 rgba(22,35,42,0.05); }
-      .titleblock > div { border-left:1px solid var(--line); padding:10px 13px; position:relative; }
+      /* ---- Masthead / title block ---- */
+      .titleblock { display:grid; grid-template-columns:2.3fr repeat(4,1fr); border:1px solid var(--line);
+        background:var(--panel); margin:0 0 14px; border-radius:var(--r); box-shadow:var(--shadow); overflow:hidden; }
+      .titleblock > div { border-left:1px solid var(--line); padding:15px 18px; position:relative; }
       .titleblock > div:first-child { border-left:none; display:flex; flex-direction:column; justify-content:center; }
-      .tb-name { font-family:var(--mono); font-size:20px; font-weight:600; letter-spacing:.16em; color:var(--ink); }
-      .tb-sub { font-size:9px; letter-spacing:.18em; text-transform:uppercase; color:var(--accent); margin-top:3px; }
-      .tb-k { font-size:8px; letter-spacing:.13em; text-transform:uppercase; color:var(--muted); }
-      .tb-v { font-family:var(--mono); font-size:14px; color:var(--ink); margin-top:2px; font-variant-numeric:tabular-nums; }
+      .tb-name { font-size:21px; font-weight:700; letter-spacing:-.02em; color:var(--ink); }
+      .tb-sub { font-size:9.5px; letter-spacing:.16em; text-transform:uppercase; color:var(--accent); margin-top:5px; font-weight:600; }
+      .tb-k { font-size:9.5px; letter-spacing:.08em; text-transform:uppercase; color:var(--muted); font-weight:500; }
+      .tb-v { font-size:16px; font-weight:600; color:var(--ink); margin-top:5px; font-variant-numeric:tabular-nums; }
       .tb-v.pass { color:var(--good); } .tb-v.fail { color:var(--alarm); } .tb-v.sig { color:var(--accent); }
 
-      /* ---- KPI instrument cards ---- */
-      .kpi-row { display:grid; grid-template-columns:repeat(auto-fit,minmax(150px,1fr)); gap:9px; margin:8px 0 6px; }
-      .kpi { background:var(--panel); border:1px solid var(--line); padding:12px 13px 11px; position:relative; }
-      .kpi::before { content:""; position:absolute; top:6px; left:6px; width:7px; height:7px;
-        border-top:1.5px solid var(--accent); border-left:1.5px solid var(--accent); opacity:.6; }
-      .kpi::after { content:""; position:absolute; bottom:6px; right:6px; width:7px; height:7px;
-        border-bottom:1.5px solid var(--line2); border-right:1.5px solid var(--line2); }
-      .kpi .lab { font-family:var(--mono); font-size:8.5px; letter-spacing:.11em; text-transform:uppercase; color:var(--muted); }
-      .kpi .val { font-family:var(--mono); font-size:23px; color:var(--ink); line-height:1.1;
-        font-variant-numeric:tabular-nums; margin-top:5px; font-weight:500; }
-      .kpi .val small { font-size:11px; color:var(--muted); margin-left:3px; }
+      /* ---- KPI cards ---- */
+      .kpi-row { display:grid; grid-template-columns:repeat(auto-fit,minmax(158px,1fr)); gap:12px; margin:10px 0 8px; }
+      .kpi { background:var(--panel); border:1px solid var(--line); border-radius:var(--r); padding:16px 17px 15px;
+        box-shadow:var(--shadow-sm); transition:box-shadow .16s ease; }
+      .kpi:hover { box-shadow:var(--shadow); }
+      .kpi .lab { font-size:10.5px; letter-spacing:.07em; text-transform:uppercase; color:var(--muted); font-weight:500; }
+      .kpi .val { font-size:28px; color:var(--ink); line-height:1.05; font-variant-numeric:tabular-nums;
+        margin-top:9px; font-weight:600; letter-spacing:-.02em; }
+      .kpi .val small { font-size:12.5px; color:var(--muted); margin-left:4px; font-weight:500; }
       .kpi .val.sig { color:var(--accent); } .kpi .val.amber { color:var(--amber); } .kpi .val.alarm { color:var(--alarm); }
 
       /* ---- tags ---- */
-      .tag { display:inline-block; font-family:var(--mono); font-size:10px; letter-spacing:.06em; padding:2px 8px;
-        border-radius:0; border:1px solid var(--line2); color:var(--sub); background:var(--panel); }
-      .tag.syn,.tag.amber { color:var(--amber); border-color:#dcbd86; } .tag.pass { color:var(--good); border-color:#a7d3bd; }
-      .tag.fail { color:var(--alarm); border-color:#e2a99f; }
+      .tag { display:inline-block; font-size:10.5px; font-weight:500; letter-spacing:.03em; padding:3px 10px;
+        border-radius:100px; border:1px solid var(--line2); color:var(--sub); background:var(--panel); }
+      .tag.syn,.tag.amber { color:var(--amber); border-color:color-mix(in srgb,var(--amber) 40%,transparent);
+        background:color-mix(in srgb,var(--amber) 8%,transparent); }
+      .tag.pass { color:var(--good); border-color:color-mix(in srgb,var(--good) 40%,transparent);
+        background:color-mix(in srgb,var(--good) 8%,transparent); }
+      .tag.fail { color:var(--alarm); border-color:color-mix(in srgb,var(--alarm) 40%,transparent);
+        background:color-mix(in srgb,var(--alarm) 8%,transparent); }
 
-      /* ---- section headers with drafting index ---- */
-      .sec { display:flex; align-items:center; gap:10px; margin:20px 0 10px; font-family:var(--mono);
-        font-size:11px; letter-spacing:.15em; text-transform:uppercase; color:var(--sub); font-weight:500; }
-      .sec[data-n]::before { content:attr(data-n); font-family:var(--mono); font-size:10px; color:var(--accent);
-        border:1px solid var(--accent); padding:1px 6px; letter-spacing:.05em; flex:none; }
-      .sec::after { content:""; flex:1; height:1px; background:linear-gradient(90deg,var(--line2),transparent); }
+      /* ---- section headers ---- */
+      .sec { display:flex; align-items:center; gap:11px; margin:26px 0 13px;
+        font-size:11px; letter-spacing:.12em; text-transform:uppercase; color:var(--sub); font-weight:600; }
+      .sec[data-n]::before { content:attr(data-n); font-family:var(--mono); font-size:10.5px; color:var(--accent);
+        letter-spacing:.02em; flex:none; font-weight:500; }
+      .sec::after { content:""; flex:1; height:1px; background:var(--line); }
 
       /* ---- equation block ---- */
-      .eq { background:var(--panel2); border:1px solid var(--line); border-left:3px solid var(--accent);
-        padding:9px 13px; margin:8px 0 10px; font-family:var(--mono); font-size:12.5px; color:var(--ink); overflow-x:auto; }
+      .eq { background:var(--panel2); border:1px solid var(--line); border-left:2.5px solid var(--accent);
+        padding:12px 15px; margin:10px 0 12px; border-radius:6px; font-family:var(--mono); font-size:13px;
+        color:var(--ink); overflow-x:auto; }
       .eq .c { color:var(--muted); }
 
       /* ---- panels & notes ---- */
-      .panel { background:var(--panel); border:1px solid var(--line); padding:12px 14px; }
-      .note { font-size:11.5px; color:var(--sub); line-height:1.55; }
+      .panel { background:var(--panel); border:1px solid var(--line); border-radius:var(--r); padding:15px 17px; box-shadow:var(--shadow-sm); }
+      .note { font-size:12.5px; color:var(--sub); line-height:1.6; }
 
       /* ---- gate rows ---- */
-      .gate { display:flex; align-items:center; gap:9px; padding:6px 2px; border-bottom:1px solid var(--line); font-size:12.5px; }
+      .gate { display:flex; align-items:center; gap:11px; padding:9px 2px; border-bottom:1px solid var(--line); font-size:13px; }
       .gate .dot { width:8px; height:8px; border-radius:50%; flex:none; }
-      .gate .actual { margin-left:auto; font-family:var(--mono); font-size:11px; color:var(--sub); }
-      .foot { color:var(--muted); font-size:10.5px; font-family:var(--mono); letter-spacing:.04em; line-height:1.6; }
+      .gate .actual { margin-left:auto; font-family:var(--mono); font-size:11.5px; color:var(--sub); }
+      .foot { color:var(--muted); font-size:11px; letter-spacing:.01em; line-height:1.65; }
 
       /* ---- data tables (ledger / generic) ---- */
-      table.ledger { width:100%; border-collapse:collapse; font-size:12.5px; }
-      table.ledger th { text-align:left; font-family:var(--mono); font-size:9.5px; letter-spacing:.1em; text-transform:uppercase;
-        color:var(--muted); border-bottom:1.5px solid var(--line2); padding:7px 10px; }
-      table.ledger td { padding:7px 10px; border-bottom:1px solid var(--line); color:var(--ink); vertical-align:top; }
+      table.ledger { width:100%; border-collapse:collapse; font-size:13px; }
+      table.ledger th { text-align:left; font-size:10px; font-weight:600; letter-spacing:.06em; text-transform:uppercase;
+        color:var(--muted); border-bottom:1px solid var(--line2); padding:9px 12px; }
+      table.ledger td { padding:9px 12px; border-bottom:1px solid var(--line); color:var(--ink); vertical-align:top; }
       table.ledger td.lv { font-family:var(--mono); color:var(--accent); font-variant-numeric:tabular-nums; }
-      table.ledger td.lb { color:var(--muted); font-size:11px; }
+      table.ledger td.lb { color:var(--muted); font-size:11.5px; }
+      table.ledger tr:last-child td { border-bottom:none; }
       table.ledger tr:hover td { background:var(--panel2); }
 
       /* ---- tabs ---- */
-      [data-baseweb="tab-list"] { gap:0; border-bottom:1px solid var(--line2); background:transparent; }
-      [data-baseweb="tab"] { font-family:var(--mono) !important; font-size:11.5px !important; letter-spacing:.07em;
-        text-transform:uppercase; color:var(--muted); padding:9px 15px !important; }
-      [data-baseweb="tab"][aria-selected="true"] { color:var(--accent); }
-      [data-baseweb="tab-highlight"] { background:var(--accent) !important; height:2px; }
+      [data-baseweb="tab-list"] { gap:2px; border-bottom:1px solid var(--line); background:transparent; }
+      [data-baseweb="tab"] { font-family:var(--sans) !important; font-size:13.5px !important; font-weight:500;
+        letter-spacing:0; color:var(--muted); padding:11px 16px !important; }
+      [data-baseweb="tab"]:hover { color:var(--ink); }
+      [data-baseweb="tab"][aria-selected="true"] { color:var(--accent); font-weight:600; }
+      [data-baseweb="tab-highlight"] { background:var(--accent) !important; height:2px; border-radius:2px; }
 
       /* ---- buttons ---- */
-      .stButton button, .stDownloadButton button { border-radius:0 !important; font-family:var(--mono) !important;
-        letter-spacing:.05em; border:1px solid var(--line2) !important; }
+      .stButton button, .stDownloadButton button { border-radius:7px !important; font-family:var(--sans) !important;
+        font-weight:500; letter-spacing:0; border:1px solid var(--line2) !important; color:var(--ink) !important;
+        transition:all .15s ease; }
+      .stButton button:hover, .stDownloadButton button:hover { border-color:var(--accent) !important; color:var(--accent) !important; }
       .stButton button[kind="primary"] { background:var(--accent) !important; border-color:var(--accent) !important;
-        color:#fff !important; box-shadow:0 2px 10px rgba(11,125,132,0.25) !important; }
-      .stButton button[kind="primary"]:hover { background:var(--ink) !important; border-color:var(--ink) !important; }
+        color:#fff !important; font-weight:600; box-shadow:0 2px 12px rgba(14,124,130,0.22) !important; }
+      .stButton button[kind="primary"]:hover { background:#0a666b !important; border-color:#0a666b !important; color:#fff !important; }
 
       /* ---- sidebar control panel ---- */
-      section[data-testid="stSidebar"] { background:#e3e9ea; border-right:1px solid var(--line2); }
-      section[data-testid="stSidebar"] [data-testid="stExpander"] { border:1px solid var(--line); background:var(--panel); }
-      section[data-testid="stSidebar"] summary { font-family:var(--mono) !important; font-size:11px !important;
-        letter-spacing:.06em; text-transform:uppercase; color:var(--sub) !important; }
-      section[data-testid="stSidebar"] label { font-size:11.5px !important; color:var(--sub) !important; }
-      [data-testid="stWidgetLabel"] p { font-size:11.5px !important; }
+      section[data-testid="stSidebar"] { background:#eef2f2; border-right:1px solid var(--line); }
+      section[data-testid="stSidebar"] [data-testid="stExpander"] { border:1px solid var(--line); background:var(--panel);
+        border-radius:8px; box-shadow:var(--shadow-sm); }
+      section[data-testid="stSidebar"] summary { font-family:var(--sans) !important; font-size:12.5px !important;
+        font-weight:600; letter-spacing:.01em; color:var(--ink) !important; text-transform:none; }
+      section[data-testid="stSidebar"] label { font-size:12.5px !important; color:var(--sub) !important; }
+      [data-testid="stWidgetLabel"] p { font-size:12.5px !important; }
+      [data-baseweb="input"] input, [data-baseweb="select"] > div, .stNumberInput input { border-radius:6px !important; }
 
-      /* ---- section header (streamlit sec class) ---- */
-      .land { max-width:900px; margin:1vh auto 0; text-align:center; }
-      .land h1 { font-family:var(--mono); font-size:46px; letter-spacing:.20em; margin:16px 0 2px; color:var(--ink); }
-      .land .tagline { font-family:var(--mono); font-size:12px; letter-spacing:.22em; text-transform:uppercase; color:var(--accent); }
-      .land .lede { color:var(--sub); font-size:15px; line-height:1.65; max-width:660px; margin:22px auto 4px; }
-      .chips { display:flex; flex-wrap:wrap; gap:7px; justify-content:center; margin:20px 0 6px; }
-      .chip { font-family:var(--mono); font-size:11px; color:var(--sub); background:var(--panel); border:1px solid var(--line2);
-        border-radius:0; padding:4px 12px; }
-      .flow { display:flex; flex-wrap:wrap; gap:10px; justify-content:center; margin:24px 0 8px; }
-      .flowcard { background:var(--panel); border:1px solid var(--line); padding:13px 15px; width:156px; text-align:left; position:relative; }
-      .flowcard::before { content:""; position:absolute; top:0; left:0; width:22px; height:2px; background:var(--accent); }
-      .flowcard .n { font-family:var(--mono); font-size:10px; color:var(--accent); letter-spacing:.12em; }
-      .flowcard .t { font-size:12.5px; color:var(--ink); margin-top:5px; font-weight:600; }
-      .flowcard .d { font-size:10.5px; color:var(--muted); margin-top:3px; line-height:1.45; }
-      .livebar { display:flex; align-items:center; gap:8px; font-family:var(--mono); font-size:12px;
-        letter-spacing:.08em; color:var(--accent); text-transform:uppercase; margin:6px 0 8px; }
-      .livedot { width:9px; height:9px; border-radius:50%; background:var(--alarm);
-        box-shadow:0 0 0 0 rgba(192,67,47,.5); animation:pulse 1.1s infinite; }
-      @keyframes pulse { 0%{box-shadow:0 0 0 0 rgba(192,67,47,.45);} 70%{box-shadow:0 0 0 7px rgba(192,67,47,0);} 100%{box-shadow:0 0 0 0 rgba(192,67,47,0);} }
-      .livestatus { font-family:var(--mono); font-size:12.5px; color:var(--sub); margin:2px 0 6px; }
-      .st-key-view_toggle { position:fixed !important; bottom:20px; right:20px; width:auto !important; z-index:1000; margin:0 !important; }
-      .st-key-view_toggle button { border-radius:0 !important; padding:9px 18px !important;
-        background:var(--accent) !important; color:#fff !important; border:none !important;
-        font-weight:600 !important; box-shadow:0 6px 20px rgba(11,125,132,0.35) !important; min-height:0 !important; }
-      .st-key-view_toggle button:hover { background:var(--ink) !important; color:#fff !important; }
+      /* ---- landing ---- */
+      .land { max-width:900px; margin:2vh auto 0; text-align:center; }
+      .land h1 { font-family:var(--sans); font-size:52px; font-weight:700; letter-spacing:-.025em; margin:16px 0 4px; color:var(--ink); }
+      .land .tagline { font-size:11.5px; font-weight:600; letter-spacing:.18em; text-transform:uppercase; color:var(--accent); }
+      .land .lede { color:var(--sub); font-size:16px; line-height:1.7; max-width:640px; margin:22px auto 4px; }
+      .chips { display:flex; flex-wrap:wrap; gap:8px; justify-content:center; margin:22px 0 6px; }
+      .chip { font-size:11.5px; font-weight:500; color:var(--sub); background:var(--panel); border:1px solid var(--line2);
+        border-radius:100px; padding:5px 14px; }
+      .flow { display:flex; flex-wrap:wrap; gap:12px; justify-content:center; margin:26px 0 8px; }
+      .flowcard { background:var(--panel); border:1px solid var(--line); border-radius:var(--r); padding:16px 18px;
+        width:168px; text-align:left; box-shadow:var(--shadow-sm); }
+      .flowcard .n { font-family:var(--mono); font-size:11px; color:var(--accent); letter-spacing:.06em; font-weight:500; }
+      .flowcard .t { font-size:13.5px; color:var(--ink); margin-top:7px; font-weight:600; }
+      .flowcard .d { font-size:11.5px; color:var(--muted); margin-top:4px; line-height:1.5; }
+      .livebar { display:flex; align-items:center; gap:9px; font-size:12px; font-weight:600;
+        letter-spacing:.08em; color:var(--accent); text-transform:uppercase; margin:8px 0 10px; }
+      .livedot { width:8px; height:8px; border-radius:50%; background:var(--accent);
+        box-shadow:0 0 0 0 rgba(14,124,130,.4); animation:pulse 1.6s infinite; }
+      @keyframes pulse { 0%{box-shadow:0 0 0 0 rgba(14,124,130,.4);} 70%{box-shadow:0 0 0 7px rgba(14,124,130,0);} 100%{box-shadow:0 0 0 0 rgba(14,124,130,0);} }
+      @media (prefers-reduced-motion: reduce) { .livedot { animation:none; } }
+      .livestatus { font-size:13px; color:var(--sub); margin:2px 0 6px; }
+      .st-key-view_toggle { position:fixed !important; bottom:22px; right:22px; width:auto !important; z-index:1000; margin:0 !important; }
+      .st-key-view_toggle button { border-radius:100px !important; padding:10px 20px !important;
+        background:var(--ink) !important; color:#fff !important; border:none !important;
+        font-weight:500 !important; box-shadow:0 6px 22px rgba(23,36,43,0.22) !important; min-height:0 !important; }
+      .st-key-view_toggle button:hover { background:var(--accent) !important; color:#fff !important; }
     </style>
     """,
     unsafe_allow_html=True,
@@ -239,16 +252,16 @@ if MOBILE:
               max-width: 430px !important;
               margin: 26px auto 46px !important;
               padding: 18px 17px 40px !important;
-              background: #f4f7f8 !important;
-              border: 1px solid #cfd8dd !important;
+              background: #ffffff !important;
+              border: 1px solid #d6dedf !important;
               border-radius: 40px !important;
-              box-shadow: 0 0 0 11px #e7ecee, 0 26px 62px rgba(20,40,55,0.22) !important;
+              box-shadow: 0 0 0 11px #eef2f2, 0 26px 62px rgba(23,36,43,0.16) !important;
               min-height: 80vh !important;
             }
             /* speaker pill, so the frame reads as a handset */
             [data-testid="stMainBlockContainer"]::before, .block-container::before {
               content: ""; display: block; width: 46px; height: 5px; border-radius: 3px;
-              background: #c4ced4; margin: 0 auto 14px !important;
+              background: #d6dedf; margin: 0 auto 14px !important;
             }
             /* keep the drawer phone-sized instead of 84vw of the desktop */
             section[data-testid="stSidebar"] { min-width: 360px !important; width: 360px !important; }
@@ -261,7 +274,7 @@ if MOBILE:
 # View toggle (mobile / desktop) - available on every page, top-right.
 _tcols = st.columns([1, 1]) if MOBILE else st.columns([5, 1])
 with _tcols[-1]:
-    if st.button("🖥  Desktop view" if MOBILE else "📱  Mobile view", key="view_toggle",
+    if st.button("Desktop view" if MOBILE else "Mobile view", key="view_toggle",
                  width="stretch",
                  help="Reflow the interface for phones and tablets: single column, collapsed sidebar."):
         st.session_state["mobile"] = not MOBILE
@@ -380,6 +393,19 @@ def hires_heave(hs: float, tp: float, gamma: float, duration: float, fs: float, 
     return [float(v) for v in t], [float(v) for v in h], float(fsr)
 
 
+@st.cache_data(show_spinner=False)
+def viv_knockdown(config_json: str) -> dict:
+    """Live VIV-life sweep vs marine-growth thickness for the current riser/current.
+
+    Keyed on a config whose marine-growth thickness is canonicalised to zero, so
+    the sweep is cached across slider moves (only the current-thickness marker
+    moves) and recomputes only when the riser or current actually changes.
+    """
+    cfg = AnalysisConfig.model_validate_json(config_json)
+    grid = [t / 1000.0 for t in range(0, 151, 10)]
+    return service.viv_life_sweep(cfg, grid)
+
+
 # --------------------------------------------------------------------------- #
 # Formatting + Plotly helpers
 # --------------------------------------------------------------------------- #
@@ -403,12 +429,12 @@ def _fig(height: int) -> go.Figure:
     f.update_layout(
         height=height, margin=dict(l=58, r=20, t=16, b=44),
         paper_bgcolor=PAPER, plot_bgcolor="#ffffff", showlegend=False,
-        font=dict(color=TEXT, family="IBM Plex Mono, JetBrains Mono, monospace", size=11),
-        hoverlabel=dict(font_family="IBM Plex Mono, monospace", bgcolor="#ffffff",
-                        bordercolor="#d3dde1", font_size=11),
-        xaxis=dict(linecolor="#c3ced3", ticks="outside", tickcolor="#c3ced3", ticklen=3,
+        font=dict(color=TEXT, family="Inter, Segoe UI, system-ui, sans-serif", size=11),
+        hoverlabel=dict(font_family="Inter, system-ui, sans-serif", bgcolor="#ffffff",
+                        bordercolor="#dfe6e7", font_size=11),
+        xaxis=dict(linecolor="#dfe6e7", ticks="outside", tickcolor="#dfe6e7", ticklen=3,
                    tickfont=dict(size=10), title_font=dict(size=11, color=TEXTHI)),
-        yaxis=dict(linecolor="#c3ced3", ticks="outside", tickcolor="#c3ced3", ticklen=3,
+        yaxis=dict(linecolor="#dfe6e7", ticks="outside", tickcolor="#dfe6e7", ticklen=3,
                    tickfont=dict(size=10), title_font=dict(size=11, color=TEXTHI)),
     )
     return f
@@ -565,7 +591,7 @@ def sn_family_fig(sn_class: str, environment: SNEnvironment) -> go.Figure:
         sel = name == sn_class
         f.add_scatter(
             x=n, y=s_mpa, mode="lines",
-            line=dict(color=SIGNAL if sel else "#c7d2d8", width=2.6 if sel else 1.0),
+            line=dict(color=SIGNAL if sel else "#cbd5d6", width=2.6 if sel else 1.0),
             name=name, hoverinfo="name" if not sel else "x+y+name",
         )
     f.update_layout(
@@ -627,7 +653,7 @@ def divergence_fan_fig(dfan: dict) -> go.Figure:
 
 def architecture_svg() -> str:
     """Professional data-flow block diagram of the twin's processing chain."""
-    INK, TEAL, TEAL2, AMBER, DIM = "#2c3e46", "#0b7079", "#0f8f9c", "#b4791a", "#8194a0"
+    INK, TEAL, TEAL2, AMBER, DIM = "#17242b", "#0e7c82", "#16a6ac", "#b07d1a", "#93a3a9"
     stages = [
         ("01", "SENSING", "MRU 6-DOF motion", "Eq.6 hang-off"),
         ("02", "TRANSFER", "H(f): MRU → TDP", "Morison / import"),
@@ -640,7 +666,7 @@ def architecture_svg() -> str:
     W, H = 1120, 300
     bw, bh, gap, x0, ymid = 138, 62, 16, 18, 168
     p = [f'<svg viewBox="0 0 {W} {H}" width="100%" xmlns="http://www.w3.org/2000/svg" '
-         "font-family='IBM Plex Mono, monospace'>",
+         "font-family='Inter, Segoe UI, sans-serif'>",
          f'<rect width="{W}" height="{H}" fill="#ffffff"/>',
          '<defs><marker id="af" markerWidth="9" markerHeight="9" refX="7" refY="3" orient="auto">'
          f'<path d="M0,0 L7,3 L0,6 Z" fill="{DIM}"/></marker></defs>']
@@ -711,9 +737,9 @@ def system_schematic_svg(payload: dict) -> str:
     hang_from_vert = 90.0 - float(cat["top_angle_deg"])
     kappa_km = float(cat["tdp_curvature"]) * 1000.0
 
-    INK, DIM, TEAL, TEAL2 = "#2c3e46", "#8194a0", "#0b7079", "#0f8f9c"
-    AMBER, SAND, WATER = "#b4791a", "#a98b5e", "#eaf3f5"
-    FONT = "font-family='JetBrains Mono, Consolas, monospace'"
+    INK, DIM, TEAL, TEAL2 = "#17242b", "#93a3a9", "#0e7c82", "#16a6ac"
+    AMBER, SAND, WATER = "#b07d1a", "#a98b5e", "#eef4f5"
+    FONT = "font-family='Inter, Segoe UI, sans-serif'"
 
     VBW, VBH = 1080, 700
     ml, mr, mt, mb = 140, 210, 58, 112
@@ -938,7 +964,7 @@ def viv_vr_fig(viv: dict) -> go.Figure:
     modes = viv["modes"]
     n = [m["mode"] for m in modes]
     vr = [m["reduced_velocity"] for m in modes]
-    colors = [AMBER if m["excited"] else "#c7d2d8" for m in modes]
+    colors = [AMBER if m["excited"] else "#cbd5d6" for m in modes]
     f.add_hrect(y0=3.0, y1=9.0, fillcolor="rgba(180,121,26,0.10)", line_width=0,
                 annotation_text="lock-in", annotation_font_size=9, annotation_font_color=AMBER)
     f.add_bar(x=n, y=vr, marker_color=colors, name="Vr")
@@ -946,6 +972,37 @@ def viv_vr_fig(viv: dict) -> go.Figure:
         xaxis=dict(title="cross-flow mode number", gridcolor=GRID, zeroline=False),
         yaxis=dict(title="reduced velocity Vr = U / (fn D)", gridcolor=GRID, zeroline=False,
                    range=[0, max(12.0, min(30.0, max(vr) if vr else 12.0))]))
+    return f
+
+
+def knockdown_fig(sweep: dict, current_mm: float) -> go.Figure:
+    """VIV screening life (log) vs marine-growth thickness, with a live marker."""
+    thk = sweep["thickness_mm"]
+    lifed = sweep["life_years"]
+    f = _fig(300)
+    f.add_scatter(x=thk, y=lifed, mode="lines+markers", line=dict(color=SIGNAL2, width=2.4),
+                  marker=dict(color=SIGNAL2, size=5), name="VIV life")
+    dl = sweep.get("design_life_years")
+    if dl:
+        f.add_hline(y=dl, line=dict(color=AMBER, width=1.2, dash="dash"),
+                    annotation_text=f"{dl:.0f}-yr design life", annotation_font_color=AMBER,
+                    annotation_font_size=9, annotation_position="top right")
+    if thk:
+        cur_life = float(np.interp(current_mm, thk, lifed))
+        below = bool(dl and cur_life < dl)
+        f.add_scatter(x=[current_mm], y=[cur_life], mode="markers+text",
+                      marker=dict(color=ALARM if below else SIGNAL, size=11, symbol="circle",
+                                  line=dict(color="#ffffff", width=1.6)),
+                      text=[f"  {current_mm:.0f} mm"], textposition="middle right",
+                      textfont=dict(color=ALARM if below else SIGNAL2, size=11), name="now")
+    _fin = [v for v in lifed if np.isfinite(v) and v > 0]
+    _dl = [dl] if dl else []
+    _lo = min(_fin + _dl) if _fin else 1.0
+    _hi = max(_fin + _dl) if _fin else 1e3
+    f.update_layout(
+        xaxis=dict(title="marine growth thickness [mm]", gridcolor=GRID, zeroline=False),
+        yaxis=dict(title="VIV screening life [yr]", type="log", gridcolor=GRID, zeroline=False,
+                   range=[float(np.log10(max(1.0, _lo * 0.6))), float(np.log10(_hi * 1.6))]))
     return f
 
 
@@ -1289,9 +1346,9 @@ def render_landing() -> None:
     st.markdown(
         '<div class="land">'
         '<svg width="72" height="72" viewBox="0 0 130 120">'
-        '<circle cx="12" cy="104" r="9" fill="none" stroke="#b4791a" stroke-width="1"/>'
-        '<path d="M12 104 C 46 104, 52 26, 120 16" fill="none" stroke="#0f8f9c" stroke-width="2.6" stroke-linecap="round"/>'
-        '<circle cx="12" cy="104" r="4.5" fill="#b4791a"/><circle cx="120" cy="16" r="3.6" fill="#0b7079"/></svg>'
+        '<circle cx="12" cy="104" r="9" fill="none" stroke="#b07d1a" stroke-width="1"/>'
+        '<path d="M12 104 C 46 104, 52 26, 120 16" fill="none" stroke="#16a6ac" stroke-width="2.6" stroke-linecap="round"/>'
+        '<circle cx="12" cy="104" r="4.5" fill="#b07d1a"/><circle cx="120" cy="16" r="3.6" fill="#0e7c82"/></svg>'
         '<h1>SCR&middot;TWIN</h1>'
         '<div class="tagline">TDP Fatigue Integrity Digital Twin</div>'
         '<div class="lede">Converts a floating unit&rsquo;s existing Motion Reference Unit recordings into a '
@@ -1497,7 +1554,7 @@ st.markdown(
 )
 
 run_col, _ = dcols([1, 3])
-run_clicked = run_col.button("▶  Run analysis", type="primary", width="stretch",
+run_clicked = run_col.button("Run analysis", type="primary", width="stretch",
                              help="Runs the full chain with a live, animated acquisition + posterior.")
 
 # --------------------------------------------------------------------------- #
@@ -1598,7 +1655,7 @@ def run_live(pl: dict) -> None:
         prog.progress(80 + int(20 * (j - 1) / (ny - 1)))
         time.sleep(0.06)
 
-    status.markdown('<div class="livestatus" style="color:#1f8a5b">&#10003; Analysis complete</div>',
+    status.markdown('<div class="livestatus" style="color:#2f855a">&#10003; Analysis complete</div>',
                     unsafe_allow_html=True)
     prog.progress(100)
     time.sleep(0.4)
@@ -1611,10 +1668,10 @@ if run_clicked:
 
 if not st.session_state.ran:
     st.markdown(
-        '<div style="margin-top:26px;text-align:center;color:#56707d">'
-        '<div style="font-size:15px;color:#1a2830">Ready.</div>'
+        '<div style="margin-top:26px;text-align:center;color:#586a71">'
+        '<div style="font-size:15px;color:#17242b">Ready.</div>'
         '<div style="font-size:12.5px;margin-top:4px">Set the sea state and riser configuration in the sidebar, '
-        'then press <b>&#9654; Run analysis</b> for a live, animated run.</div></div>',
+        'then press <b>Run analysis</b> for a live, animated run.</div></div>',
         unsafe_allow_html=True)
     st.stop()
 
@@ -1987,12 +2044,37 @@ with tab_detect:
                  for m in _excd[:10]], value_cols=(1, 2, 3, 4, 5)), unsafe_allow_html=True)
         st.caption("Combined life adds the wave and VIV damage rates by Miner. VIV is a Griffin "
                    "A/D lock-in upper bound - design-grade VIV needs Shear7 / VIVANA.")
+        st.markdown('<div class="sec" data-n="07">Marine-growth VIV knock-down '
+                    '<span class="tag amber">live sweep</span></div>', unsafe_allow_html=True)
+        _kd_cfg = cfg.model_copy(update={
+            "viv": cfg.viv.model_copy(update={"marine_growth_thickness": 0.0})})
+        _sweep = viv_knockdown(_kd_cfg.model_dump_json())
+        _cur_mm = cfg.viv.marine_growth_thickness * 1e3
+        if _sweep.get("enabled") and _sweep["thickness_mm"]:
+            kd1, kd2 = dcols([3, 2])
+            kd1.plotly_chart(knockdown_fig(_sweep, _cur_mm), width="stretch",
+                             config={"displayModeBar": False})
+            _clean_life = _sweep["life_years"][0]
+            _cur_life = float(np.interp(_cur_mm, _sweep["thickness_mm"], _sweep["life_years"]))
+            _dl = _sweep.get("design_life_years") or 0.0
+            kd2.markdown(kpi_row([
+                kpi("At current growth", life(_cur_life), "yr",
+                    "alarm" if (_dl and _cur_life < _dl) else "sig"),
+                kpi("Clean-riser life", life(_clean_life), "yr", "sig"),
+                kpi("Growth setting", f'{_cur_mm:.0f}', "mm", "amber"),
+                kpi("Knock-down", f'{_clean_life / _cur_life:.1f}' if _cur_life else "-", "x",
+                    "amber"),
+            ]), unsafe_allow_html=True)
+            kd2.caption("VIV screening life as biofouling thickens: DNV-RP-C205 grows the "
+                        "hydrodynamic diameter and added mass, which feed the DNV-RP-F204 lock-in "
+                        "screen. The marker is the current growth setting - drag the sidebar "
+                        "'Marine growth thickness' slider to move it along the curve.")
     if _crack is not None and _crack.get("enabled"):
         st.markdown('<div class="eq">da/dN = C(&#916;K)<sup>m</sup>,&nbsp; '
                     '&#916;K = Y&#183;&#916;&#963;&#183;&#8730;(&#960;a) '
                     '<span class="c"># BS 7910 Paris-law crack growth (parallel to S-N)</span></div>',
                     unsafe_allow_html=True)
-        st.markdown('<div class="sec" data-n="07">Fracture mechanics &middot; Paris-law crack growth '
+        st.markdown('<div class="sec" data-n="08">Fracture mechanics &middot; Paris-law crack growth '
                     '(BS 7910) <span class="tag amber">conservative ECA</span></div>', unsafe_allow_html=True)
         fr1, fr2 = dcols([1, 1])
         fr1.plotly_chart(crack_growth_ui_fig(_crack), width="stretch", config={"displayModeBar": False})
@@ -2179,7 +2261,7 @@ with tab_prov:
     st.markdown(data_table(
         ["Gate", "Category", "Target", "Actual", "Status"],
         [[x["name"], x["category"], x["target"], x["actual"],
-          '<span style="color:#1f8a5b">PASS</span>' if x["passed"] else '<span style="color:#c0432f">FAIL</span>']
+          '<span style="color:#2f855a">PASS</span>' if x["passed"] else '<span style="color:#c0523f">FAIL</span>']
          for x in g], value_cols=(3,)), unsafe_allow_html=True)
     st.markdown('<div class="sec" data-n="02">Claim → evidence map</div>', unsafe_allow_html=True)
     st.markdown(data_table(
