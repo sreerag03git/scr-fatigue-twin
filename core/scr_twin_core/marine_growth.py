@@ -23,7 +23,7 @@ from __future__ import annotations
 import math
 from dataclasses import dataclass
 
-from .constants import G, RHO_SEAWATER
+from .constants import RHO_SEAWATER, G
 
 
 @dataclass(frozen=True)
