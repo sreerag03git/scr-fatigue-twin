@@ -44,6 +44,14 @@ from scr_twin_core.viv import CurrentProfile, viv_screening
 from scr_twin_core.rao import VesselRAO, load_rao_csv
 from scr_twin_core.synthetic import synthetic_mru_6dof, synthetic_mru_motion
 from scr_twin_core.transfer import InterpolatedTransferFunction, load_transfer_csv
+from server.diagrams import (
+    architecture_svg,
+    flexible_riser_svg,
+    platform_types_svg,
+    riser_config_svg,
+    system_cutaway_svg,
+    system_schematic_svg,
+)
 
 MAX_POINTS = 280  # cap transported array length for smooth, light charts
 
@@ -481,7 +489,7 @@ def analyze(
     viv_rate = float(viv_block.get("annual_damage_rate", 0.0)) if viv_block.get("enabled") else 0.0
     combined_rate = wave_rate + viv_rate
 
-    return to_native({
+    payload = to_native({
         "sea_state": {
             "hs": result.sea_state.hs, "tp": result.sea_state.tp,
             "tz": result.sea_state.tz, "gamma": result.sea_state.gamma,
@@ -540,6 +548,17 @@ def analyze(
             "heave": decimate(heave, 600),
         },
     })
+    # Shared SVG diagrams (same generators the Streamlit console uses), embedded so
+    # the React console can render an identical technical set.
+    payload["diagrams"] = {
+        "cutaway": system_cutaway_svg(payload),
+        "general_arrangement": system_schematic_svg(payload, config.riser),
+        "architecture": architecture_svg(),
+        "configurations": riser_config_svg(),
+        "platforms": platform_types_svg(),
+        "flexible": flexible_riser_svg(),
+    }
+    return payload
 
 
 def make_synthetic(hs: float, tp: float, gamma: float, duration: float, fs: float, seed: int) -> tuple[np.ndarray, float]:

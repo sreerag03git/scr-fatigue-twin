@@ -5,6 +5,7 @@ import { LoadingScreen } from "./components/LoadingScreen";
 import { ConfigPanel } from "./components/panels/ConfigPanel";
 import { DamagePanel } from "./components/panels/DamagePanel";
 import { DecisionPanel } from "./components/panels/DecisionPanel";
+import { DiagramsPanel } from "./components/panels/DiagramsPanel";
 import { PosteriorPanel } from "./components/panels/PosteriorPanel";
 import { RunHistoryPanel } from "./components/panels/RunHistoryPanel";
 import { SeaStatePanel } from "./components/panels/SeaStatePanel";
@@ -52,6 +53,7 @@ export default function App() {
             <SeaStatePanel />
             <TracePanel />
           </div>
+          <DiagramsPanel />
           <DamagePanel />
           <PosteriorPanel />
           <div className="stage__row2">

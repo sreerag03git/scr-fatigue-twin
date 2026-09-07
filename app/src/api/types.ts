@@ -105,6 +105,14 @@ export interface AnalyzeResponse {
   trace: { time: number[]; heave: number[] };
   run_id: number | null;
   source?: { kind: string; [k: string]: unknown };
+  diagrams?: {
+    cutaway: string;
+    general_arrangement: string;
+    configurations: string;
+    platforms: string;
+    flexible: string;
+    architecture: string;
+  };
 }
 
 export interface ConditionalEconomics {

@@ -1,8 +1,9 @@
-/* SCR Twin console — instrument-grade design system.
-   Lineage: offshore HMI/SCADA, glass-cockpit, Bloomberg density. Dark, precise,
-   calm. Colour carries meaning only: cool signal = live/healthy, amber = fatigue/
-   damage, alarm = out-of-limit. Numbers are the hero (monospace). 8-pt spacing.
-   No web fonts (offline): system grotesque + system monospace. */
+/* SCR Twin console — shared design system with the Streamlit app.
+   Premium-minimal light: soft off-white ground, white panels, one deep-teal
+   accent, muted semantic status colours. Inter for text, IBM Plex Mono for data.
+   Colour carries meaning: teal = live/healthy, amber = fatigue/damage, alarm =
+   out-of-limit. Falls back to system fonts offline. */
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500&display=swap');
 
 :root {
   /* Petroleum/graphite background family */
@@ -40,39 +41,42 @@
   --grid-2: #1d2830;
   --axis: #3a4c59;
 
-  --font-sans: "Segoe UI", -apple-system, "Helvetica Neue", Roboto, Arial, sans-serif;
-  --font-mono: "JetBrains Mono", "Cascadia Mono", Consolas, "SF Mono", ui-monospace, monospace;
+  --font-sans: "Inter", "Segoe UI", -apple-system, "Helvetica Neue", Roboto, Arial, sans-serif;
+  --font-mono: "IBM Plex Mono", "JetBrains Mono", Consolas, "SF Mono", ui-monospace, monospace;
 
-  --r: 3px; /* radius — restrained, mechanical */
+  --r: 7px; /* radius — premium-minimal, matches the Streamlit app */
   --sp: 8px;
 
   --shadow: 0 1px 0 #ffffff08 inset, 0 8px 24px #00000055;
 }
 
-/* Light "report" theme for print/export — equally precise */
+/* Premium-minimal light theme — matches the Streamlit app (default). */
 :root[data-theme="light"] {
-  --bg-0: #eef1f3;
+  --bg-0: #f4f6f6;
   --bg-1: #ffffffcc;
   --bg-1s: #ffffff;
-  --bg-2: #f5f7f8;
-  --bg-3: #eceff1;
-  --bg-inset: #e6eaec;
-  --line: #d3dbe0;
-  --line-2: #c2ccd3;
-  --line-strong: #9aa9b2;
-  --text-hi: #10191f;
-  --text-mid: #3f515c;
-  --text-lo: #6b7d88;
-  --text-faint: #93a2ab;
-  --signal: #0f8f9c;
-  --signal-2: #0b7079;
-  --amber: #b4791a;
-  --alarm: #c33d28;
-  --good: #1f8a5b;
-  --grid: #dde3e7;
-  --grid-2: #d3dbe0;
-  --axis: #9aa9b2;
-  --shadow: 0 1px 2px #00000012;
+  --bg-2: #f1f4f4;
+  --bg-3: #eef2f2;
+  --bg-inset: #eef2f2;
+  --line: #e7ecec;
+  --line-2: #dbe2e2;
+  --line-strong: #cfd8d9;
+  --text-hi: #17242b;
+  --text-mid: #586a71;
+  --text-lo: #7c8d93;
+  --text-faint: #a3b0b5;
+  --signal: #0e7c82;
+  --signal-2: #16a6ac;
+  --signal-dim: #cfe6e7;
+  --amber: #b07d1a;
+  --amber-dim: #ecdcbb;
+  --alarm: #c0523f;
+  --alarm-dim: #f0d3cd;
+  --good: #2f855a;
+  --grid: #eaeeef;
+  --grid-2: #e0e7e7;
+  --axis: #c4ced1;
+  --shadow: 0 1px 2px #17242b0a, 0 6px 22px #17242b0d;
 }
 
 * { box-sizing: border-box; }

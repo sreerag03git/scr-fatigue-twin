@@ -127,6 +127,23 @@
   .splash__tdp { animation: none; opacity: 0.35; }
 }
 
+/* System diagrams panel */
+.diagram-tabs { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 12px; }
+.diagram-tab {
+  padding: 5px 11px; border-radius: var(--r); border: 1px solid var(--line-2);
+  background: var(--bg-2); color: var(--text-mid); font-size: 11px; font-weight: 600;
+  letter-spacing: 0.02em; cursor: pointer; transition: border-color 120ms, color 120ms, background 120ms;
+}
+.diagram-tab:hover { border-color: var(--line-strong); color: var(--text-hi); }
+.diagram-tab.is-active {
+  color: var(--signal); border-color: var(--signal); background: var(--signal-dim);
+}
+.diagram-view {
+  width: 100%; overflow: auto; border: 1px solid var(--line); border-radius: var(--r);
+  background: #ffffff; padding: 4px;
+}
+.diagram-view svg { display: block; width: 100%; height: auto; }
+
 /* Responsive: laptop / tablet */
 @media (max-width: 1180px) {
   .console { grid-template-columns: 1fr; }
