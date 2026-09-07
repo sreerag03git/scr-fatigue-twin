@@ -1199,7 +1199,7 @@ st.markdown(
 )
 
 NAV_SECTIONS = ["Overview", "Structure", "Environment", "Sensing", "Detection",
-                "Assimilation", "Economics", "Ledger", "Provenance"]
+                "Assimilation", "Economics", "Ledger", "Provenance", "Console"]
 st.session_state.setdefault("section", "Overview")
 st.sidebar.markdown('<div class="navtitle">Sections</div>', unsafe_allow_html=True)
 for _s in NAV_SECTIONS:
@@ -1490,6 +1490,66 @@ def run_live(pl: dict) -> None:
 if run_clicked:
     st.session_state.ran = True
     run_live(payload)
+
+
+def _console_up(url: str = "http://localhost:8000/", timeout: float = 0.6) -> bool:
+    """True when the local FastAPI instrument console answers (i.e. local dev)."""
+    import urllib.request
+    try:
+        with urllib.request.urlopen(url, timeout=timeout) as r:  # noqa: S310 (localhost only)
+            return r.status == 200
+    except Exception:
+        return False
+
+
+# The instrument console is a launcher/feature — available without needing a run.
+if _section == "Console":
+    st.caption("An optional local front-end over this same tested physics core — identical numbers, "
+               "a denser instrument HMI (bespoke charts, run history, live provenance export). It is a "
+               "feature of this project, not a separate app: it imports the very same core, so a result "
+               "here and there are byte-identical for the same seed. This shared web app needs no install.")
+    _up = _console_up()
+    _pill = ('<span style="color:#2f855a;font-weight:600">&#9679; live</span>' if _up
+             else '<span style="color:#b07d1a;font-weight:600">&#9679; not running here</span>')
+    st.markdown(
+        '<div class="sec" data-n="01">Instrument console &middot; React + FastAPI over the shared core '
+        f'&nbsp; {_pill}</div>', unsafe_allow_html=True)
+    if _up:
+        st.markdown('<div class="note">Detected the local console at '
+                    '<code>http://localhost:8000</code>. Embedded live below &mdash; the identical '
+                    'physics, rendered in the dense HMI.</div>', unsafe_allow_html=True)
+        st.markdown(
+            '<a href="http://localhost:8000" target="_blank" style="display:inline-block;'
+            'background:#0e7c82;color:#fff;padding:7px 14px;border-radius:8px;text-decoration:none;'
+            'font-weight:600;font-size:13px;margin:4px 0 10px">Open the console in a new tab &nearr;</a>',
+            unsafe_allow_html=True)
+        components.iframe("http://localhost:8000", height=900, scrolling=True)
+    else:
+        cA, cB = dcols([3, 2])
+        with cA:
+            st.markdown('<div class="note">The instrument console runs on your machine. Launch it, then '
+                        'this panel embeds it live &mdash; or open it directly in a browser tab. On the '
+                        'shared cloud link it stays a local feature (a hosted server cannot reach your '
+                        'localhost).</div>', unsafe_allow_html=True)
+            st.code("./run.ps1            # builds the console and serves it at http://localhost:8000\n"
+                    "# cross-platform equivalent:\n"
+                    "#   (cd app && npm install && npm run build)\n"
+                    "#   uvicorn server.main:app --port 8000", language="bash")
+            st.markdown(
+                '<a href="http://localhost:8000" target="_blank" style="display:inline-block;'
+                'background:#0e7c82;color:#fff;padding:7px 14px;border-radius:8px;text-decoration:none;'
+                'font-weight:600;font-size:13px;margin:2px 0">Open the console &nearr;</a>'
+                '<span class="foot" style="margin-left:10px">(once it is running)</span>',
+                unsafe_allow_html=True)
+        with cB:
+            st.markdown('<div class="sec">What it adds</div>', unsafe_allow_html=True)
+            st.markdown(
+                '<div class="foot">Same core, same S-N / catenary / VIV / fracture / FORM physics and '
+                'the same technical diagrams as here &mdash; presented as a live control console: '
+                'the signature contracting posterior fan, spectra, RBI + fleet economics, browsable run '
+                'history, and a one-click provenance bundle. Best for a workstation / desktop build.</div>',
+                unsafe_allow_html=True)
+    st.stop()
 
 if not st.session_state.ran:
     st.markdown(
@@ -2015,7 +2075,7 @@ if _section == "Assimilation":
         st.markdown('<div class="sec" data-n="04">Structural reliability &middot; FORM index &beta; vs DNV '
                     'safety class</div>', unsafe_allow_html=True)
         st.markdown(kpi_row([
-            kpi("Reliability index β", f'{_rel["beta"]:.2f}', "", "sig" if _relpass else "alarm"),
+            kpi("Reliability index β (annual)", f'{_rel.get("beta_annual", _rel["beta"]):.2f}', "", "sig" if _relpass else "alarm"),
             kpi("Target β", f'{_rel["target_beta"]:.2f}', f'{_rel["safety_class"]}'),
             kpi("Annual Pf", f'{_rel["pf_annual"]:.1e}'),
             kpi("Target annual Pf", f'{_rel["target_pf"]:.0e}'),
@@ -2108,7 +2168,7 @@ if _section == "Ledger":
         ("Combined wave+VIV life", f"{life(_comb_life)} yr", "Miner (wave + VIV)"),
         ("VIV-only life", f"{life(_viv['life_years'])} yr" if _viv and _viv.get('enabled') else "n/a", "DNV-RP-F204 screening"),
         ("DFF utilisation / acceptance", f"{_acc['utilisation']:.2f} -> {'PASS' if _acc['passes'] else 'FAIL'}" if _acc else "-", "DNV-OS-F201"),
-        ("Reliability index β / annual Pf", f"{_rel['beta']:.2f} / {_rel['pf_annual']:.1e} -> {'PASS' if _rel['passes'] else 'FAIL'}" if _rel and _rel.get('enabled') else "-", "DNV-RP-C210 FORM"),
+        ("Reliability index β / annual Pf", f"{_rel.get('beta_annual', _rel['beta']):.2f} / {_rel['pf_annual']:.1e} -> {'PASS' if _rel['passes'] else 'FAIL'}" if _rel and _rel.get('enabled') else "-", "DNV-RP-C210 FORM"),
         ("Crack-based life (BS 7910 ECA)", f"{life(_crack['crack_life_years'])} yr" if _crack and _crack.get('enabled') else "-", "Paris-law"),
         ("Next inspection", f"{insp['next_inspection_year']:.1f} yr (target PoF {insp['target_pof']*100:.1f}%)", "RBI"),
         ("Net fleet value dC", f"{econ['fleet_delta_c_usd']/1e6:+.1f} US$M", "Eq. 11 discounted"),
