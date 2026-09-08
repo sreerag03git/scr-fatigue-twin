@@ -1,6 +1,9 @@
 # Streamlit Community Cloud entrypoint deps (for streamlit_app.py).
 # scr_twin_core is imported from ./core via sys.path, so it is NOT installed
 # here — only its runtime dependencies plus the Streamlit UI stack are listed.
+# Redeploy marker (2026-09-08): touch to force a full environment rebuild so the
+# Cloud interpreter cold-starts and reimports server.service after its API changed
+# (Streamlit hot-reruns the entry script but does not reimport submodules).
 streamlit>=1.38
 plotly>=5.24
 matplotlib>=3.8
