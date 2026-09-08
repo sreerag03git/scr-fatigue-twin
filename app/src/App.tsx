@@ -3,6 +3,7 @@ import "./styles/layout.css";
 import { useStore } from "./state/store";
 import { LoadingScreen } from "./components/LoadingScreen";
 import { ConfigPanel } from "./components/panels/ConfigPanel";
+import { CircumferentialPanel } from "./components/panels/CircumferentialPanel";
 import { DamagePanel } from "./components/panels/DamagePanel";
 import { DecisionPanel } from "./components/panels/DecisionPanel";
 import { DiagramsPanel } from "./components/panels/DiagramsPanel";
@@ -66,6 +67,7 @@ export default function App() {
             <VivPanel />
             <SeabedPanel />
           </div>
+          <CircumferentialPanel />
           <DiagramsPanel />
           <PosteriorPanel />
           <div className="stage__row2">

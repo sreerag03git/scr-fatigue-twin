@@ -199,6 +199,22 @@ export interface LongTermContribution {
   damage_fraction: number;
 }
 
+export interface CircumferentialPayload {
+  enabled: boolean;
+  angles_deg?: number[];
+  damage_rate?: number[];
+  wave_rate?: number[];
+  viv_rate?: number[];
+  life_years?: number[];
+  worst_angle_deg?: number;
+  worst_life_years?: number;
+  crown_life_years?: number;
+  best_life_years?: number;
+  heading_deg?: number;
+  viv_included?: boolean;
+  worst_vs_crown_ratio?: number;
+}
+
 export interface LongTermPayload {
   source: string;
   annual_damage_rate: number;
@@ -220,6 +236,7 @@ export interface AnalyzeResponse {
   crack?: CrackPayload;
   reliability?: ReliabilityPayload;
   seabed?: SeabedPayload;
+  circumferential?: CircumferentialPayload;
   viv?: VivPayload;
   combined?: CombinedPayload;
   dof_contributions?: Record<string, number>;

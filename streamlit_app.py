@@ -361,7 +361,7 @@ def analyze_synthetic(config_json: str, hs: float, tp: float, gamma: float,
         motion_prov = {"source": "synthetic (illustrative RAO)", "is_validated": False}
     return service.analyze(cfg, channels["heave"], fsr, is_synthetic=True,
                            imported_tf=tf, channels=channels, scatter_diagram=diagram,
-                           motion_provenance=motion_prov)
+                           motion_provenance=motion_prov, wave_heading_deg=heading)
 
 
 @st.cache_data(show_spinner=False)
@@ -892,6 +892,52 @@ def reliability_fig(rel: dict) -> go.Figure:
         xaxis=dict(title="importance α² [% of ln-life variance]", gridcolor=GRID, zeroline=False,
                    range=[0, max(vals) * 1.25 if vals else 1.0]),
         yaxis=dict(autorange="reversed"), margin=dict(l=90, r=30, t=10, b=40))
+    return f
+
+
+def circumferential_fig(circ: dict) -> go.Figure:
+    """Polar clock map of annual fatigue damage around the TDP girth weld.
+
+    Wave bending (in-plane, amber) hot spot rotates to the heading; cross-flow VIV
+    (out-of-plane, teal) peaks at the 90/270 saddles; the total envelope (dark) is
+    their Miner sum and the red marker is the worst clock position.
+    """
+    ang = circ["angles_deg"]
+    total, wave, viv = circ["damage_rate"], circ["wave_rate"], circ["viv_rate"]
+    mx = max(total) or 1.0
+
+    def _c(a: list) -> list:
+        return list(a) + [a[0]]
+
+    ang_c = _c(ang)
+    f = go.Figure()
+    f.add_trace(go.Scatterpolar(
+        theta=ang_c, r=_c([w / mx for w in wave]), mode="lines",
+        line=dict(color=AMBER, width=1.6), fill="toself", fillcolor="rgba(176,125,26,0.14)",
+        name="wave (in-plane)"))
+    if any(v > 0 for v in viv):
+        f.add_trace(go.Scatterpolar(
+            theta=ang_c, r=_c([v / mx for v in viv]), mode="lines",
+            line=dict(color=SIGNAL2, width=1.6), fill="toself", fillcolor="rgba(14,124,130,0.12)",
+            name="cross-flow VIV (out-of-plane)"))
+    f.add_trace(go.Scatterpolar(
+        theta=ang_c, r=_c([t / mx for t in total]), mode="lines",
+        line=dict(color=TEXTHI, width=1.9), name="total D(φ) (Miner sum)"))
+    f.add_trace(go.Scatterpolar(
+        theta=[circ["worst_angle_deg"]], r=[max(total) / mx], mode="markers",
+        marker=dict(color=ALARM, size=10, line=dict(color="#fff", width=1)), name="worst position"))
+    f.update_layout(
+        height=340, margin=dict(l=30, r=30, t=16, b=10), paper_bgcolor=PAPER,
+        showlegend=True, legend=dict(font=dict(size=10), orientation="h", yanchor="top", y=-0.02),
+        font=dict(color=TEXT, family="Inter, system-ui, sans-serif", size=11),
+        polar=dict(
+            bgcolor="#ffffff",
+            radialaxis=dict(visible=True, range=[0, 1.06], showticklabels=False, gridcolor=GRID),
+            angularaxis=dict(
+                rotation=90, direction="clockwise", gridcolor=GRID, tickmode="array",
+                tickvals=[0, 90, 180, 270], ticktext=["Crown 0°", "90°", "Keel 180°", "270°"],
+                tickfont=dict(size=10)),
+        ))
     return f
 
 
@@ -1580,6 +1626,7 @@ _comb = payload.get("combined")
 _crack = payload.get("crack")
 _rel = payload.get("reliability")
 _seabed = payload.get("seabed")
+_circ = payload.get("circumferential")
 _dfan = payload.get("divergence_fan")
 _comb_life = _comb["life_years"] if _comb else dmg["deterministic_life_years"]
 
@@ -2012,6 +2059,25 @@ if _section == "Detection":
                         "hydrodynamic diameter and added mass, which feed the DNV-RP-F204 lock-in "
                         "screen. The marker is the current growth setting - drag the sidebar "
                         "'Marine growth thickness' slider to move it along the curve.")
+    if _circ is not None and _circ.get("enabled"):
+        st.markdown('<div class="sec" data-n="08">Circumferential fatigue &middot; TDP girth weld '
+                    '<span class="tag amber">clock position</span></div>', unsafe_allow_html=True)
+        cc1, cc2 = dcols([3, 2])
+        cc1.plotly_chart(circumferential_fig(_circ), width="stretch", config={"displayModeBar": False})
+        with cc2:
+            st.markdown(kpi_row([
+                kpi("Worst clock position", f'{_circ["worst_angle_deg"]:.0f}', "deg", "amber"),
+                kpi("Worst-position life", life(_circ["worst_life_years"]), "yr (screening)"),
+                kpi("Crown &phi;=0 life", life(_circ["crown_life_years"]), "yr"),
+                kpi("Worst vs crown", f'{_circ["worst_vs_crown_ratio"]:.1f}', "x", "amber"),
+            ]), unsafe_allow_html=True)
+            st.caption("Localizes girth-weld fatigue and flags the worst clock position for inspection; "
+                       "the heading rotates the wave hot spot, crown/keel (0/180 deg) are fixed pipe "
+                       "positions. Screening idealizations: a single in-phase wave plane and pure "
+                       "cross-flow VIV - it does NOT model in-line (streamwise) VIV near the crown/keel "
+                       "or oblique-heading whirl, so it is not a life-extension basis; the conservative "
+                       "combined wave+VIV life governs. Wave and VIV share one hot-spot S-N basis "
+                       "(SCF, thickness, mean stress).")
     if _crack is not None and _crack.get("enabled"):
         st.markdown('<div class="eq">da/dN = C(&#916;K)<sup>m</sup>,&nbsp; '
                     '&#916;K = Y&#183;&#916;&#963;&#183;&#8730;(&#960;a) '
