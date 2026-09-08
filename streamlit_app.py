@@ -227,6 +227,51 @@ st.markdown(
         background:var(--ink) !important; color:#fff !important; border:none !important;
         font-weight:500 !important; box-shadow:0 6px 22px rgba(23,36,43,0.22) !important; min-height:0 !important; }
       .st-key-view_toggle button:hover { background:var(--accent) !important; color:#fff !important; }
+
+      /* --- seamless reruns: recompute in the background without a white flash ---
+         keep the previous results fully visible (no stale dimming) while the new
+         values compute, and soften any element swap so a variable change reads as
+         an update, not a reload. */
+      [data-stale="true"], [data-testid="stElementContainer"][data-stale="true"],
+      .element-container[data-stale="true"] { opacity:1 !important; filter:none !important; }
+      [data-testid="stAppViewContainer"] { transition:opacity .12s ease; }
+      [data-testid="stElementContainer"], .stPlotlyChart, [data-testid="stIFrame"] { transition:opacity .15s ease; }
+      /* keep the running indicator quiet (the compute is meant to be invisible) */
+      [data-testid="stStatusWidget"] { opacity:.0; transition:opacity .2s ease; }
+
+      /* --- console opening animation (mirrors the React LoadingScreen) --- */
+      .opening { position:fixed; inset:0; z-index:99999; display:grid; place-content:center;
+        background:radial-gradient(120% 90% at 50% 18%, #ffffff 0%, var(--bg) 60%);
+        animation:op-fade .55s ease 3.05s forwards; }
+      @keyframes op-fade { to { opacity:0; visibility:hidden; pointer-events:none; } }
+      /* during the opening, fade the chrome out then back in (self-reverting, so the
+         off-white sidebar/header strip blends into the splash and it reads full-screen) */
+      @keyframes op-chrome { 0%,84%{opacity:0;} 100%{opacity:1;} }
+      .opening__in { width:340px; text-align:center; }
+      .opening__mark { margin-bottom:14px; filter:drop-shadow(0 6px 16px rgba(14,124,130,.14)); }
+      .op-cat { stroke-dasharray:260; stroke-dashoffset:260; animation:op-draw 1.7s cubic-bezier(.2,.7,.2,1) forwards; }
+      @keyframes op-draw { to { stroke-dashoffset:0; } }
+      .op-tdp { transform-origin:12px 104px; animation:op-pulse 2s ease-in-out infinite; }
+      @keyframes op-pulse { 0%,100%{opacity:.18; transform:scale(.7);} 50%{opacity:.55; transform:scale(1.25);} }
+      .opening__title { font-size:34px; font-weight:700; letter-spacing:-.02em; color:var(--ink); }
+      .opening__sub { font-size:10.5px; font-weight:600; letter-spacing:.16em; text-transform:uppercase; color:var(--muted); margin-top:4px; }
+      .opening__bar { width:100%; height:3px; background:var(--line); border-radius:3px; overflow:hidden; margin-top:22px; }
+      .opening__fill { display:block; height:100%; width:0; border-radius:3px;
+        background:linear-gradient(90deg,var(--accent2),var(--accent)); animation:op-fill 2.9s cubic-bezier(.4,0,.2,1) forwards; }
+      @keyframes op-fill { to { width:100%; } }
+      .opening__stages { position:relative; height:15px; margin-top:12px; }
+      .opening__stages span { position:absolute; left:0; right:0; font-family:var(--mono); font-size:11px;
+        color:var(--accent); opacity:0; animation:op-stage .66s ease forwards; }
+      @keyframes op-stage { 0%{opacity:0; transform:translateY(3px);} 30%{opacity:1; transform:translateY(0);}
+        78%{opacity:1;} 100%{opacity:0;} }
+      .opening__stages span:last-child { animation-duration:.85s; }
+      .opening__foot { font-size:9px; color:var(--muted); letter-spacing:.05em; margin-top:20px; font-family:var(--mono); }
+      @media (prefers-reduced-motion: reduce) {
+        .opening { animation:op-fade .3s ease 2.2s forwards; }
+        .op-cat { animation:none; stroke-dashoffset:0; } .op-tdp { animation:none; opacity:.4; }
+        .opening__fill { animation:none; width:100%; }
+        .opening__stages span { animation:none; opacity:0; } .opening__stages span:last-child { opacity:1; }
+      }
     </style>
     """,
     unsafe_allow_html=True,
@@ -406,7 +451,10 @@ def viv_knockdown(config_json: str) -> dict:
     moves) and recomputes only when the riser or current actually changes.
     """
     cfg = AnalysisConfig.model_validate_json(config_json)
-    grid = [t / 1000.0 for t in range(0, 151, 10)]
+    # 9-point grid (denser at the low end where the curve bends): the per-point VIV
+    # eigensolve is the cost, so fewer points ~halves the sweep with the same
+    # n_modes accuracy; Plotly draws a smooth line and the marker interpolates.
+    grid = [t / 1000.0 for t in (0, 15, 30, 50, 70, 90, 110, 130, 150)]
     return service.viv_life_sweep(cfg, grid)
 
 
@@ -1173,6 +1221,7 @@ def render_landing() -> None:
     c = st.container() if MOBILE else st.columns([2, 1, 2])[1]
     if c.button("Launch console  →", type="primary", width="stretch"):
         st.session_state.launched = True
+        st.session_state.opening = True
         st.rerun()
     st.markdown(
         '<div class="foot" style="text-align:center;margin-top:10px">Reference implementation &middot; '
@@ -1182,6 +1231,40 @@ def render_landing() -> None:
 if not st.session_state.launched:
     render_landing()
     st.stop()
+
+
+# One-shot console opening animation (only right after Launch; consumed so it never
+# replays on the variable-change reruns). Injected into the parent DOM so its
+# fixed overlay covers the first-load compute, then it fades itself out via CSS.
+if st.session_state.get("opening"):
+    _op_stages = [
+        "Initialising physics core", "Loading DNV-RP-C203 S-N library",
+        "Solving reference catenary", "Deriving TDP transfer function",
+        "Running validation gates", "Computing remaining-life posterior",
+    ]
+    st.markdown(
+        '<style>section[data-testid="stSidebar"],header[data-testid="stHeader"]{'
+        'animation:op-chrome 3.5s ease forwards;}</style>'
+        '<div class="opening"><div class="opening__in">'
+        '<div class="opening__mark"><svg width="104" height="96" viewBox="0 0 130 120">'
+        '<circle class="op-tdp" cx="12" cy="104" r="9" fill="none" stroke="#b07d1a" stroke-width="1"/>'
+        '<path class="op-cat" d="M12 104 C 46 104, 52 26, 120 16" fill="none" stroke="#16a6ac" '
+        'stroke-width="2.6" stroke-linecap="round"/>'
+        '<circle cx="12" cy="104" r="4.5" fill="#b07d1a"/><circle cx="120" cy="16" r="3.6" fill="#0e7c82"/></svg></div>'
+        '<div class="opening__title">SCR&middot;TWIN</div>'
+        '<div class="opening__sub">TDP Fatigue Integrity Console</div>'
+        '<div class="opening__bar"><span class="opening__fill"></span></div>'
+        '<div class="opening__stages">'
+        + "".join(
+            f'<span style="animation-delay:{i * 0.47:.2f}s">{s}&hellip;</span>'
+            for i, s in enumerate(_op_stages)
+        )
+        + '</div>'
+        '<div class="opening__foot">Physics-based digital twin &middot; DNV-RP-C203 &middot; ASTM E1049 &middot; Dirlik</div>'
+        '</div></div>',
+        unsafe_allow_html=True,
+    )
+    st.session_state.opening = False
 
 
 # --------------------------------------------------------------------------- #
