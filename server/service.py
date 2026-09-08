@@ -404,7 +404,7 @@ def _crack_payload(config: AnalysisConfig, result: FullResult) -> dict[str, Any]
     a_grid = np.linspace(1e-4, a_crit, 60)
     pod = pod_lognormal(a_grid, a50=2.0e-3, sigma=0.6)  # subsea MPI/ACFM-class
     mc = crack_growth_mc(InitialFlawDistribution(), mat, dsig_eq, cycles_per_year,
-                         a_c=a_crit, n_members=4000, seed=config.seed)
+                         a_c=a_crit, n_members=2000, seed=config.seed)
     finite = mc[np.isfinite(mc)]
     frac_prop = float(np.mean(np.isfinite(mc)))
     crack_insp: float | None = None

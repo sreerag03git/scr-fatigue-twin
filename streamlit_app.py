@@ -236,8 +236,8 @@ st.markdown(
       .element-container[data-stale="true"] { opacity:1 !important; filter:none !important; }
       [data-testid="stAppViewContainer"] { transition:opacity .12s ease; }
       [data-testid="stElementContainer"], .stPlotlyChart, [data-testid="stIFrame"] { transition:opacity .15s ease; }
-      /* keep the running indicator quiet (the compute is meant to be invisible) */
-      [data-testid="stStatusWidget"] { opacity:.0; transition:opacity .2s ease; }
+      /* keep the running indicator visible (small, top-right) so a slow/throttled
+         recompute still gives feedback rather than feeling frozen */
 
       /* --- console opening animation (mirrors the React LoadingScreen) --- */
       .opening { position:fixed; inset:0; z-index:99999; display:grid; place-content:center;
@@ -1454,7 +1454,9 @@ with st.sidebar.expander("Arabian Gulf correction", expanded=True):
     sfac = st.slider("Salinity factor", 0.85, 0.90, 0.875, 0.005, disabled=not env_on)
 
 with st.sidebar.expander("Probabilistic"):
-    n_mc = st.select_slider("Monte Carlo members", [1000, 2000, 5000, 10000, 20000], 10000)
+    n_mc = st.select_slider("Monte Carlo members", [1000, 2000, 5000, 10000, 20000], 5000,
+                            help="Lower is faster/lighter (kinder to the shared cloud CPU); the "
+                                 "P10/P50/P90 percentiles are stable from ~5k. Raise for a smoother tail.")
     seed = st.number_input("MC seed", 0, 1_000_000, 0, 1)
 
 try:
@@ -2118,30 +2120,43 @@ if _section == "Detection":
         st.caption("Combined life adds the wave and VIV damage rates by Miner. VIV is a Griffin "
                    "A/D lock-in upper bound - design-grade VIV needs Shear7 / VIVANA.")
         st.markdown('<div class="sec" data-n="07">Marine-growth VIV knock-down '
-                    '<span class="tag amber">live sweep</span></div>', unsafe_allow_html=True)
-        _kd_cfg = cfg.model_copy(update={
-            "viv": cfg.viv.model_copy(update={"marine_growth_thickness": 0.0})})
-        _sweep = viv_knockdown(_kd_cfg.model_dump_json())
-        _cur_mm = cfg.viv.marine_growth_thickness * 1e3
-        if _sweep.get("enabled") and _sweep["thickness_mm"]:
-            kd1, kd2 = dcols([3, 2])
-            kd1.plotly_chart(knockdown_fig(_sweep, _cur_mm), width="stretch",
-                             config={"displayModeBar": False})
-            _clean_life = _sweep["life_years"][0]
-            _cur_life = float(np.interp(_cur_mm, _sweep["thickness_mm"], _sweep["life_years"]))
-            _dl = _sweep.get("design_life_years") or 0.0
-            kd2.markdown(kpi_row([
-                kpi("At current growth", life(_cur_life), "yr",
-                    "alarm" if (_dl and _cur_life < _dl) else "sig"),
-                kpi("Clean-riser life", life(_clean_life), "yr", "sig"),
-                kpi("Growth setting", f'{_cur_mm:.0f}', "mm", "amber"),
-                kpi("Knock-down", f'{_clean_life / _cur_life:.1f}' if _cur_life else "-", "x",
-                    "amber"),
-            ]), unsafe_allow_html=True)
-            kd2.caption("VIV screening life as biofouling thickens: DNV-RP-C205 grows the "
-                        "hydrodynamic diameter and added mass, which feed the DNV-RP-F204 lock-in "
-                        "screen. The marker is the current growth setting - drag the sidebar "
-                        "'Marine growth thickness' slider to move it along the curve.")
+                    '<span class="tag amber">on demand</span></div>', unsafe_allow_html=True)
+        # Opt-in: the sweep runs a VIV eigensolve at every growth thickness (the
+        # heaviest step), so it is off by default to keep the shared app responsive.
+        _show_kd = st.checkbox(
+            "Compute the marine-growth knock-down sweep", value=False,
+            help="Runs a DNV-RP-F204 VIV eigensolve at each growth thickness — the heaviest "
+                 "computation in the app. Off by default so variable changes stay fast; tick to "
+                 "draw the curve (then it is cached and the growth-slider marker moves for free).")
+        if not _show_kd:
+            st.caption("Sweep off (it is compute-heavy). Tick the box to draw VIV life vs "
+                       "marine-growth thickness; the current-growth marker then moves along the "
+                       "cached curve as you drag the sidebar slider.")
+        else:
+            _kd_cfg = cfg.model_copy(update={
+                "viv": cfg.viv.model_copy(update={"marine_growth_thickness": 0.0})})
+            with st.spinner("Running the VIV knock-down sweep…"):
+                _sweep = viv_knockdown(_kd_cfg.model_dump_json())
+            _cur_mm = cfg.viv.marine_growth_thickness * 1e3
+            if _sweep.get("enabled") and _sweep["thickness_mm"]:
+                kd1, kd2 = dcols([3, 2])
+                kd1.plotly_chart(knockdown_fig(_sweep, _cur_mm), width="stretch",
+                                 config={"displayModeBar": False})
+                _clean_life = _sweep["life_years"][0]
+                _cur_life = float(np.interp(_cur_mm, _sweep["thickness_mm"], _sweep["life_years"]))
+                _dl = _sweep.get("design_life_years") or 0.0
+                kd2.markdown(kpi_row([
+                    kpi("At current growth", life(_cur_life), "yr",
+                        "alarm" if (_dl and _cur_life < _dl) else "sig"),
+                    kpi("Clean-riser life", life(_clean_life), "yr", "sig"),
+                    kpi("Growth setting", f'{_cur_mm:.0f}', "mm", "amber"),
+                    kpi("Knock-down", f'{_clean_life / _cur_life:.1f}' if _cur_life else "-", "x",
+                        "amber"),
+                ]), unsafe_allow_html=True)
+                kd2.caption("VIV screening life as biofouling thickens: DNV-RP-C205 grows the "
+                            "hydrodynamic diameter and added mass, which feed the DNV-RP-F204 lock-in "
+                            "screen. The marker is the current growth setting - drag the sidebar "
+                            "'Marine growth thickness' slider to move it along the curve.")
     if _circ is not None and _circ.get("enabled"):
         st.markdown('<div class="sec" data-n="08">Circumferential fatigue &middot; TDP girth weld '
                     '<span class="tag amber">clock position</span></div>', unsafe_allow_html=True)
