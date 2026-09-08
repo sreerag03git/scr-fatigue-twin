@@ -12,6 +12,7 @@ from typing import Any
 import numpy as np
 
 from scr_twin_core.bayesian import BayesianRateEstimator
+from scr_twin_core.circumferential import circumferential_damage_map
 from scr_twin_core.montecarlo import (
     UncertaintyModel,
     simulate_block_rate_observations,
@@ -38,12 +39,20 @@ from scr_twin_core.pipeline import FullResult, long_term_fatigue, run_full_analy
 from scr_twin_core.marine_growth import MarineGrowth
 from scr_twin_core.reliability import form_fatigue_reliability
 from scr_twin_core.seabed import boundary_layer_length, seabed_sensitivity
-from scr_twin_core.sn import get_curve
+from scr_twin_core.sn import MeanStressModel, get_curve
 from scr_twin_core.scatter import ScatterDiagram, example_scatter_diagram, load_scatter_csv
 from scr_twin_core.viv import CurrentProfile, viv_screening
 from scr_twin_core.rao import VesselRAO, load_rao_csv
 from scr_twin_core.synthetic import synthetic_mru_6dof, synthetic_mru_motion
 from scr_twin_core.transfer import InterpolatedTransferFunction, load_transfer_csv
+from server.diagrams import (
+    architecture_svg,
+    flexible_riser_svg,
+    platform_types_svg,
+    riser_config_svg,
+    system_cutaway_svg,
+    system_schematic_svg,
+)
 
 MAX_POINTS = 280  # cap transported array length for smooth, light charts
 
@@ -422,6 +431,67 @@ def _crack_payload(config: AnalysisConfig, result: FullResult) -> dict[str, Any]
     }
 
 
+def _circumferential_payload(
+    config: AnalysisConfig, result: FullResult, viv_block: dict[str, Any], wave_heading_deg: float,
+) -> dict[str, Any]:
+    """Clock-position fatigue map around the TDP girth weld (wave in-plane + VIV out-of-plane)."""
+    riser = config.riser
+    hist = result.rainflow_hist
+    edges = np.asarray(hist["edges"], dtype=float)
+    counts = np.asarray(hist["counts"], dtype=float)
+    block_s = float(result.time_domain_block.block_seconds)
+    if counts.sum() <= 0.0 or block_s <= 0.0 or edges.size < 2:
+        return {"enabled": False}
+    centres = 0.5 * (edges[:-1] + edges[1:])  # hot-spot stress-range bin centres [Pa]
+    correction = config.environment.correction()
+    base = get_curve(riser.sn_class, riser.sn_environment)
+    curve = correction.apply_to_curve(base) if correction is not None else base
+
+    # VIV mode stresses are nominal bending; scale by the same effective hot-spot
+    # SCF the wave ranges already carry so both enter the S-N curve on one basis.
+    scf_eff = riser.effective_scf()
+    viv_ranges_pa: list[float] = []
+    viv_freqs_hz: list[float] = []
+    if viv_block.get("enabled"):
+        for m in viv_block.get("modes", []):
+            if m.get("excited") and float(m.get("stress_range_mpa", 0.0)) > 0.0:
+                viv_ranges_pa.append(float(m["stress_range_mpa"]) * 1e6 * scf_eff)
+                viv_freqs_hz.append(float(m["frequency_hz"]))
+
+    # Same mean-stress basis as the primary time-domain assessment (pipeline):
+    # as-welded suppresses it; otherwise ride on the standing axial hot-spot mean.
+    resolved_mean = MeanStressModel.NONE if riser.as_welded else riser.mean_stress_model
+    static_mean_pa = 0.0
+    uts_pa: float | None = None
+    if resolved_mean is not MeanStressModel.NONE:
+        cat = riser.catenary()
+        section = riser.pipe_section()
+        static_mean_pa = (
+            riser.static_mean_stress if riser.static_mean_stress is not None
+            else cat.horizontal_tension / section.steel_area
+        )
+        uts_pa = riser.ultimate_strength
+
+    cmap = circumferential_damage_map(
+        wave_ranges_pa=centres, wave_counts=counts, block_seconds=block_s,
+        curve=curve, thickness_m=riser.thickness_for_correction,
+        viv_mode_ranges_pa=viv_ranges_pa, viv_mode_freqs_hz=viv_freqs_hz,
+        heading_deg=float(wave_heading_deg), n_positions=72,
+        mean_stress_model=resolved_mean, static_mean_pa=static_mean_pa,
+        ultimate_strength_pa=uts_pa,
+    )
+    payload = to_native(cmap.as_dict())
+    payload.update({
+        "enabled": True,
+        "viv_included": bool(viv_ranges_pa),
+        "worst_vs_crown_ratio": (
+            cmap.crown_life_years / cmap.worst_life_years
+            if cmap.worst_life_years > 0.0 and np.isfinite(cmap.crown_life_years) else 1.0
+        ),
+    })
+    return payload
+
+
 def _posterior_payload(result: FullResult) -> dict[str, Any]:
     mc = result.monte_carlo
     counts, edges = mc.histogram(48)
@@ -446,6 +516,7 @@ def analyze(
     channels: dict[str, np.ndarray] | None = None,
     scatter_diagram: ScatterDiagram | None = None,
     motion_provenance: dict[str, Any] | None = None,
+    wave_heading_deg: float = 0.0,
 ) -> dict[str, Any]:
     """Run the full chain and assemble the complete dashboard payload.
 
@@ -481,7 +552,7 @@ def analyze(
     viv_rate = float(viv_block.get("annual_damage_rate", 0.0)) if viv_block.get("enabled") else 0.0
     combined_rate = wave_rate + viv_rate
 
-    return to_native({
+    payload = to_native({
         "sea_state": {
             "hs": result.sea_state.hs, "tp": result.sea_state.tp,
             "tz": result.sea_state.tz, "gamma": result.sea_state.gamma,
@@ -499,6 +570,7 @@ def analyze(
         "crack": _crack_payload(config, result),
         "reliability": _reliability_payload(config, result),
         "seabed": _seabed_payload(config, result),
+        "circumferential": _circumferential_payload(config, result, viv_block, wave_heading_deg),
         "viv": viv_block,
         "combined": {
             "wave_rate": wave_rate,
@@ -540,6 +612,17 @@ def analyze(
             "heave": decimate(heave, 600),
         },
     })
+    # Shared SVG diagrams (same generators the Streamlit console uses), embedded so
+    # the React console can render an identical technical set.
+    payload["diagrams"] = {
+        "cutaway": system_cutaway_svg(payload),
+        "general_arrangement": system_schematic_svg(payload, config.riser),
+        "architecture": architecture_svg(),
+        "configurations": riser_config_svg(),
+        "platforms": platform_types_svg(),
+        "flexible": flexible_riser_svg(),
+    }
+    return payload
 
 
 def make_synthetic(hs: float, tp: float, gamma: float, duration: float, fs: float, seed: int) -> tuple[np.ndarray, float]:

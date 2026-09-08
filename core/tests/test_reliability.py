@@ -78,3 +78,13 @@ def test_rejects_bad_inputs():
 
 def test_all_safety_classes_defined():
     assert set(SAFETY_CLASS_TARGET_PF) == {"low", "normal", "high"}
+
+
+def test_beta_annual_is_on_the_annual_basis_and_consistent_with_pass():
+    # The annual-basis index must equal Phi^-1(1 - pf_annual) and, being on the
+    # same basis as the (annual) target, must exceed target_beta exactly when the
+    # annual-Pf acceptance passes. This is what the UI headlines, so it must not
+    # contradict the pass/fail badge the way the cumulative beta can.
+    r = form_fatigue_reliability(_life(), 25.0, _PARAMS, safety_class="normal")
+    assert r.beta_annual == pytest.approx(float(norm.ppf(1.0 - max(r.pf_annual, 1e-16))), rel=1e-9)
+    assert (r.beta_annual >= r.target_beta) == r.passes

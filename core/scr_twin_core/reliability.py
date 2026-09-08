@@ -43,7 +43,8 @@ SAFETY_CLASS_TARGET_PF: dict[str, float] = {
 class ReliabilityResult:
     """Fatigue reliability outcome for a design life and safety class."""
 
-    beta: float                 # reliability index at the design life
+    beta: float                 # cumulative reliability index at the design life
+    beta_annual: float          # annual-basis index Phi^-1(1 - pf_annual), comparable to target_beta
     pf_cumulative: float        # P(failure by the design life)
     pf_annual: float            # marginal annual Pf in the final year
     design_life_years: float
@@ -57,6 +58,7 @@ class ReliabilityResult:
     def as_dict(self) -> dict[str, object]:
         return {
             "beta": self.beta,
+            "beta_annual": self.beta_annual,
             "pf_cumulative": self.pf_cumulative,
             "pf_annual": self.pf_annual,
             "design_life_years": self.design_life_years,
@@ -125,6 +127,9 @@ def form_fatigue_reliability(
     pf_cum = float(norm.cdf(-beta))
     t_prev = max(design_life_years - 1.0, 1e-6)
     pf_annual = max(pf_cum - float(norm.cdf(-beta_at(t_prev))), 0.0)
+    # Annual-basis index, comparable to the (annual) target: a floor on pf keeps it
+    # finite when the marginal annual Pf underflows to 0.
+    beta_annual = float(norm.ppf(1.0 - max(pf_annual, 1e-16)))
 
     target_pf = SAFETY_CLASS_TARGET_PF[safety_class]
     target_beta = float(norm.ppf(1.0 - target_pf))
@@ -132,6 +137,7 @@ def form_fatigue_reliability(
 
     return ReliabilityResult(
         beta=beta,
+        beta_annual=beta_annual,
         pf_cumulative=pf_cum,
         pf_annual=pf_annual,
         design_life_years=design_life_years,
