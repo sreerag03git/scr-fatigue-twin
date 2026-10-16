@@ -1335,6 +1335,7 @@ def render_landing() -> None:
     if c.button("Launch console  →", type="primary", width="stretch"):
         st.session_state.launched = True
         st.session_state.opening = True
+        st.session_state.ran = True  # auto-run: open straight onto results, no Run-analysis click
         st.rerun()
     st.markdown(
         '<div class="foot" style="text-align:center;margin-top:10px">Reference implementation &middot; '
