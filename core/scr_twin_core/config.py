@@ -175,6 +175,39 @@ class RiserConfig(BaseModel):
             is_reference_preset=True,
         )
 
+    @classmethod
+    def paper_case_study(cls) -> RiserConfig:
+        """Representative SCR of SPE-235285-MS (ADIPEC) Table 2 - the paper this
+        twin implements. Synthetic/representative, not field data.
+
+        Lazy-wave steel catenary riser, 0.324 m (12.75 in) OD, 28 mm wall, 1200 m
+        water, API 5L X65, 12 deg top angle from vertical, 25 yr design life, DNV-
+        RP-C203 class D girth weld in seawater with cathodic protection, and a
+        touchdown-zone design fatigue factor of 10 (high safety class). The twin
+        solves the plain catenary (Eq. 1); the lazy-wave buoyancy section is a
+        reduced-order effect embedded in the imported transfer function, per the
+        paper's Layer-1 description.
+        """
+        return cls(
+            outer_diameter=0.324,
+            wall_thickness=0.028,
+            material_grade="API 5L X65 (SMYS 448 MPa)",
+            ultimate_strength=531e6,
+            contents_density=800.0,
+            coating_thickness=0.05,
+            coating_density=900.0,
+            water_depth=1200.0,
+            hang_off_angle_deg=12.0,
+            scf=1.15,
+            sn_class="D",
+            sn_environment=SNEnvironment.SEAWATER_CP,
+            design_fatigue_factor=10.0,
+            design_service_life_years=25.0,
+            safety_class="high",
+            mean_stress_model=MeanStressModel.NONE,
+            is_reference_preset=True,
+        )
+
 
 class TransferConfig(BaseModel):
     """Layer-1 transfer-function options (Route 1 analytic parameters)."""
