@@ -4,6 +4,7 @@
 # Redeploy marker (2026-09-08): touch to force a full environment rebuild so the
 # Cloud interpreter cold-starts and reimports server.service after its API changed
 # (Streamlit hot-reruns the entry script but does not reimport submodules).
+# Redeploy marker (PR #24 paper-verify): touch to force a full Cloud env rebuild
 streamlit>=1.38
 plotly>=5.24
 matplotlib>=3.8
