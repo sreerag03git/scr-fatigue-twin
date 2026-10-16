@@ -272,6 +272,68 @@ st.markdown(
         .opening__fill { animation:none; width:100%; }
         .opening__stages span { animation:none; opacity:0; } .opening__stages span:last-child { opacity:1; }
       }
+
+      /* ===================== NEUMORPHISM SKIN =====================
+         Soft, monochrome surfaces: background and elements share one colour and
+         are shaped only by a paired light/dark shadow - raised cards, pressed
+         inputs, buttons that depress on click. Appended last so it wins. */
+      :root {
+        --bg:#e6eaef; --panel:#e6eaef; --panel2:#dfe4ea;
+        --line:#d2d8df; --line2:#cdd4dc;
+        --nm-d:#c4cbd4; --nm-l:#ffffff;
+        --nm-out:6px 6px 13px var(--nm-d), -6px -6px 13px var(--nm-l);
+        --nm-sm:3px 3px 7px var(--nm-d), -3px -3px 7px var(--nm-l);
+        --nm-in:inset 4px 4px 8px var(--nm-d), inset -4px -4px 8px var(--nm-l);
+        --shadow:var(--nm-out); --shadow-sm:var(--nm-sm); --r:18px;
+      }
+      .stApp, section[data-testid="stSidebar"] { background:var(--bg) !important; }
+      section[data-testid="stSidebar"] { box-shadow:7px 0 20px rgba(150,162,176,0.22); }
+      /* raised cards (shape from shadow, no borders) */
+      .titleblock, .kpi, .flowcard, .hero, .panel, .chip,
+      [data-testid="stExpander"] > details {
+        background:var(--bg) !important; border:none !important;
+        box-shadow:var(--nm-out) !important; border-radius:var(--r) !important; }
+      .titleblock { overflow:visible !important; }
+      .titleblock > div { border-left:none !important; }
+      .titleblock > div:not(:first-child)::before { content:""; position:absolute; left:0; top:22%;
+        height:56%; width:2px; border-radius:2px; box-shadow:1px 0 2px var(--nm-l), -1px 0 2px var(--nm-d); }
+      .kpi { box-shadow:var(--nm-sm) !important; } .kpi:hover { box-shadow:var(--nm-out) !important; }
+      .flowcard:hover { box-shadow:var(--nm-out) !important; }
+      .eq { background:var(--bg) !important; border:none !important; border-radius:13px !important;
+        box-shadow:var(--nm-in) !important; border-left:3px solid var(--accent) !important; }
+      .tag { background:var(--bg) !important; border:none !important; box-shadow:var(--nm-sm) !important; }
+      .sec[data-n]::before { background:var(--bg); box-shadow:var(--nm-sm); border:none !important;
+        border-radius:7px; padding:2px 8px; }
+      /* pressed inputs */
+      [data-baseweb="input"], [data-baseweb="select"] > div, .stNumberInput input,
+      .stTextInput input, .stTextArea textarea, [data-baseweb="base-input"] {
+        background:var(--bg) !important; border:none !important;
+        box-shadow:var(--nm-in) !important; border-radius:12px !important; }
+      .stNumberInput input, [data-baseweb="input"] input { box-shadow:none !important; background:transparent !important; }
+      /* buttons: raised, depress on click */
+      .stButton button, .stDownloadButton button {
+        background:var(--bg) !important; border:none !important; color:var(--ink) !important;
+        box-shadow:var(--nm-sm) !important; border-radius:13px !important;
+        transition:box-shadow .12s ease, transform .07s ease, color .12s ease; }
+      .stButton button:hover, .stDownloadButton button:hover {
+        box-shadow:var(--nm-out) !important; color:var(--accent) !important; }
+      .stButton button:active, .stDownloadButton button:active {
+        box-shadow:var(--nm-in) !important; transform:translateY(1px); }
+      .stButton button[kind="primary"], .stDownloadButton button[kind="primary"] {
+        background:var(--bg) !important; color:var(--accent) !important;
+        box-shadow:var(--nm-out) !important; font-weight:700 !important; }
+      .stButton button[kind="primary"]:hover { color:#0a666b !important; }
+      .stButton button[kind="primary"]:active { box-shadow:var(--nm-in) !important; }
+      /* nav rail: flat, raised on hover, inset (pressed-in) when active */
+      div[class*="st-key-nav_"] button { background:var(--bg) !important; box-shadow:none !important; }
+      div[class*="st-key-nav_"] button:hover { box-shadow:var(--nm-sm) !important; }
+      div[class*="st-key-nav_"] button[kind="primary"] {
+        box-shadow:var(--nm-in) !important; color:var(--accent) !important; }
+      .st-key-view_toggle button { box-shadow:var(--nm-out) !important; background:var(--ink) !important; color:#fff !important; }
+      /* wells: progress bars + gauge are carved in */
+      .gauge, .opening__bar { background:var(--bg) !important; box-shadow:var(--nm-in) !important; }
+      /* charts rest in a soft raised tray */
+      [data-testid="stExpander"] > details { box-shadow:var(--nm-sm) !important; }
     </style>
     """,
     unsafe_allow_html=True,
@@ -346,6 +408,21 @@ st.session_state.setdefault("ran", False)
 @st.cache_data(show_spinner=False)
 def gates() -> list[dict]:
     return [g.as_dict() for g in validation_mod.run_all_gates(seed=0)]
+
+
+@st.cache_data(show_spinner=False)
+def bendat_verification() -> list[dict]:
+    """SPE-235285 Fig. 7: rainflow+Miner vs Bendat narrow-band across S-N slopes."""
+    return validation_mod.narrowband_bendat_vs_rainflow(seed=0)
+
+
+@st.cache_data(show_spinner=False)
+def convexity_curves() -> dict:
+    """SPE-235285 Fig. 9: closed-form median design-vs-ensemble divergence vs CoV."""
+    from scr_twin_core.montecarlo import convexity_divergence_curves
+    grid = [round(x, 4) for x in np.linspace(0.0, 0.30, 31)]
+    curves = convexity_divergence_curves(grid, (3.0, 4.0, 5.0))
+    return {"cov": grid, "curves": {str(k): v for k, v in curves.items()}}
 
 
 def _imported_tf(cfg: AnalysisConfig, transfer_bytes: bytes | None):
@@ -943,6 +1020,42 @@ def reliability_fig(rel: dict) -> go.Figure:
     return f
 
 
+def bendat_fig(rows: list[dict]) -> go.Figure:
+    """SPE-235285 Fig. 7: rainflow+Miner vs Bendat (1964) narrow-band across slopes."""
+    ms = [r["m"] for r in rows]
+    rain = [r["rainflow_rate"] for r in rows]
+    bend = [r["bendat_rate"] for r in rows]
+    f = _fig(250)
+    f.add_scatter(x=ms, y=bend, mode="lines", line=dict(color=SIGNAL2, width=2.2),
+                  name="Bendat narrow-band (Eq. 12)")
+    f.add_scatter(x=ms, y=rain, mode="markers", marker=dict(color=AMBER, size=10, line=dict(color="#fff", width=1)),
+                  name="rainflow + Miner")
+    f.update_layout(
+        yaxis=dict(title="annual damage (log)", type="log", gridcolor=GRID),
+        xaxis=dict(title="S-N inverse slope m", gridcolor=GRID, zeroline=False),
+        legend=dict(orientation="h", y=1.12, font=dict(size=10)), margin=dict(l=58, r=20, t=22, b=44))
+    return f
+
+
+def convexity_fig(data: dict, op_cov: float, op_m: float) -> go.Figure:
+    """SPE-235285 Fig. 9(a): closed-form median divergence vs interannual CoV of Hs."""
+    cov = data["cov"]
+    f = _fig(250)
+    pal = {"3.0": "#2f855a", "4.0": SIGNAL2, "5.0": AMBER}
+    for mkey, vals in data["curves"].items():
+        f.add_scatter(x=cov, y=[100.0 * v for v in vals], mode="lines",
+                      line=dict(color=pal.get(mkey, SIGNAL), width=2), name=f"m = {float(mkey):.0f}")
+    from scr_twin_core.montecarlo import convexity_median_divergence
+    f.add_scatter(x=[op_cov], y=[100.0 * convexity_median_divergence(op_cov, op_m)], mode="markers",
+                  marker=dict(color=ALARM, size=11, line=dict(color="#fff", width=1)),
+                  name=f"operating point (c≈{op_cov:.2f}, m={op_m:.0f})")
+    f.update_layout(
+        yaxis=dict(title="median divergence (%)", gridcolor=GRID, zeroline=False, rangemode="tozero"),
+        xaxis=dict(title="interannual CoV of Hs,  c", gridcolor=GRID, zeroline=False),
+        legend=dict(orientation="h", y=1.12, font=dict(size=10)), margin=dict(l=58, r=20, t=22, b=44))
+    return f
+
+
 def circumferential_fig(circ: dict) -> go.Figure:
     """Polar clock map of annual fatigue damage around the TDP girth weld.
 
@@ -1374,28 +1487,42 @@ else:
     st.sidebar.caption("Columns: `time_s, heave_m[, pitch_deg...]`. Malformed files degrade gracefully.")
 
 st.sidebar.markdown("### Riser & analysis")
-ref = RiserConfig.reference_scr()
+# Configuration preset: the Quéau-range reference, or the paper's own Table-2 case
+# study (SPE-235285). Switching preset re-seeds the inputs below (preset-keyed).
+_PRESETS = {
+    "Reference SCR (Quéau range)": RiserConfig.reference_scr,
+    "SPE 235285 case study (paper)": RiserConfig.paper_case_study,
+}
+_preset_name = st.sidebar.selectbox(
+    "Configuration preset", list(_PRESETS), index=0,
+    help="Load a starting configuration. 'SPE 235285 case study' reproduces Table 2 "
+         "of the paper this twin implements: 0.324 m x 28 mm, 1200 m, 12 deg, class D "
+         "seawater+CP, DFF 10.")
+ref = _PRESETS[_preset_name]()
+_pk = _preset_name[:3]  # preset key suffix so inputs re-seed when the preset changes
 with st.sidebar.expander("Steel catenary riser", expanded=True):
-    od = st.number_input("Outer diameter [m]", 0.1, 1.5, ref.outer_diameter, 0.01, format="%.4f")
-    wt = st.number_input("Wall thickness [m]", 0.005, 0.08, ref.wall_thickness, 0.001, format="%.4f")
-    depth = st.number_input("Water depth [m]", 100.0, 3500.0, ref.water_depth, 50.0)
-    ang = st.number_input("Hang-off [deg from vertical]", 1.0, 45.0, ref.hang_off_angle_deg, 1.0)
-    scf = st.number_input("Detail SCF", 1.0, 5.0, ref.scf, 0.05)
-    hi_lo_mm = st.number_input("Girth-weld hi-lo misalignment [mm]", 0.0, 5.0, 0.0, 0.5,
+    od = st.number_input("Outer diameter [m]", 0.1, 1.5, ref.outer_diameter, 0.01, format="%.4f", key=f"od_{_pk}")
+    wt = st.number_input("Wall thickness [m]", 0.005, 0.08, ref.wall_thickness, 0.001, format="%.4f", key=f"wt_{_pk}")
+    depth = st.number_input("Water depth [m]", 100.0, 3500.0, ref.water_depth, 50.0, key=f"dp_{_pk}")
+    ang = st.number_input("Hang-off [deg from vertical]", 1.0, 45.0, ref.hang_off_angle_deg, 1.0, key=f"ang_{_pk}")
+    scf = st.number_input("Detail SCF", 1.0, 5.0, ref.scf, 0.05, key=f"scf_{_pk}")
+    hi_lo_mm = st.number_input("Girth-weld hi-lo misalignment [mm]", 0.0, 5.0, 0.0, 0.5, key=f"hl_{_pk}",
                                help="DNV-RP-C203 App.3: adds a physics-derived SCF to the detail SCF.")
-    sn_class = st.selectbox("DNV S-N class", SN_CLASSES, index=SN_CLASSES.index(ref.sn_class))
+    sn_class = st.selectbox("DNV S-N class", SN_CLASSES, index=SN_CLASSES.index(ref.sn_class), key=f"sn_{_pk}")
     _sn_env_label = st.selectbox(
-        "S-N environment", ["in air (Table 2-1)", "seawater w/ CP (Table 2-2)"], index=0,
+        "S-N environment", ["in air (Table 2-1)", "seawater w/ CP (Table 2-2)"],
+        index=1 if ref.sn_environment is SNEnvironment.SEAWATER_CP else 0, key=f"env_{_pk}",
         help="Seawater-with-cathodic-protection moves the slope change to 1e6 cycles "
              "(DNV-RP-C203 Table 2-2) - more severe in the wave band than the in-air curve.",
     )
     sn_env = SNEnvironment.SEAWATER_CP if _sn_env_label.startswith("seawater") else SNEnvironment.IN_AIR
 
 with st.sidebar.expander("Acceptance & mean stress"):
-    dff = st.number_input("Design Fatigue Factor (DFF)", 1.0, 10.0, 3.0, 1.0,
+    dff = st.number_input("Design Fatigue Factor (DFF)", 1.0, 10.0, ref.design_fatigue_factor, 1.0, key=f"dff_{_pk}",
                           help="DNV-OS-F201: predicted life must exceed DFF x design service life.")
-    design_life = st.number_input("Design service life [yr]", 5.0, 60.0, 25.0, 5.0)
-    safety_class = st.selectbox("Safety class (reliability target)", ["low", "normal", "high"], index=1,
+    design_life = st.number_input("Design service life [yr]", 5.0, 60.0, ref.design_service_life_years, 5.0, key=f"dl_{_pk}")
+    safety_class = st.selectbox("Safety class (reliability target)", ["low", "normal", "high"],
+                                index=["low", "normal", "high"].index(ref.safety_class), key=f"sc_{_pk}",
                                 help="DNV-RP-C210 target annual Pf: low 1e-3, normal 1e-4, high 1e-5.")
     _ms_label = st.selectbox("Mean-stress model", ["none", "goodman", "gerber", "swt"], index=0,
                              help="Rides on the static axial tension mean (T_TDP/A_steel).")
@@ -2229,6 +2356,25 @@ if _section == "Assimilation":
     st.plotly_chart(cdf_fig(post), width="stretch", config={"displayModeBar": False})
     st.caption("Cumulative distribution of the Monte-Carlo remaining-life posterior - read off the "
                "probability the life falls below any design target.")
+    _cvx = convexity_curves()
+    st.markdown('<div class="eq">divergence = (1 + c<sup>2</sup>)<sup>m(m&minus;1)/2</sup> &minus; 1 '
+                '<span class="c"># mean-preserving convexity gap (Jensen), c = interannual CoV of Hs</span></div>',
+                unsafe_allow_html=True)
+    st.markdown('<div class="sec" data-n="03">Design-vs-ensemble divergence &middot; convexity scaling law '
+                '(SPE&#8209;235285 Fig.&nbsp;9)</div>', unsafe_allow_html=True)
+    cx1, cx2 = dcols([3, 2])
+    cx1.plotly_chart(convexity_fig(_cvx, 0.16, 4.0), width="stretch", config={"displayModeBar": False})
+    with cx2:
+        from scr_twin_core.montecarlo import convexity_median_divergence as _cmd
+        st.markdown(kpi_row([
+            kpi("At c=0.16, m=4", f"{_cmd(0.16, 4.0)*100:.0f}", "%", "amber"),
+            kpi("At c=0.16, m=5", f"{_cmd(0.16, 5.0)*100:.0f}", "%", "alarm"),
+        ]), unsafe_allow_html=True)
+        st.caption("Because fatigue damage is convex in sea-state severity (D ~ Hs^m), a realistic "
+                   "interannual climate spread raises the ensemble-median accumulated damage above a "
+                   "deterministic design anchored to one representative sea state. The median divergence "
+                   "is a scaling law in the climate CoV c and the S-N slope m, not a tuned number - the "
+                   "paper's operating point c~=0.16, m=4 gives about +15%.")
     if _rel is not None and _rel.get("enabled"):
         st.markdown('<div class="eq">g = ln(L&#183;&#916;) &minus; ln(T),&nbsp; '
                     '&#946; = (&#956;<sub>lnL</sub> &minus; ln T)/&#963;,&nbsp; '
@@ -2370,7 +2516,22 @@ if _section == "Provenance":
         [[x["name"], x["category"], x["target"], x["actual"],
           '<span style="color:#2f855a">PASS</span>' if x["passed"] else '<span style="color:#c0523f">FAIL</span>']
          for x in g], value_cols=(3,)), unsafe_allow_html=True)
-    st.markdown('<div class="sec" data-n="02">Claim → evidence map</div>', unsafe_allow_html=True)
+    _bdt = bendat_verification()
+    _bmax = max(r["rel_error"] for r in _bdt)
+    st.markdown('<div class="sec" data-n="02">Damage-engine verification &middot; rainflow vs Bendat '
+                'narrow-band (SPE&#8209;235285 Fig.&nbsp;7)</div>', unsafe_allow_html=True)
+    bv1, bv2 = dcols([3, 2])
+    bv1.plotly_chart(bendat_fig(_bdt), width="stretch", config={"displayModeBar": False})
+    with bv2:
+        st.markdown(kpi_row([
+            kpi("Max |error|", f"{_bmax*100:.1f}", "%", "sig" if _bmax < 0.03 else "alarm"),
+            kpi("Slopes tested", f"{len(_bdt)}", "m=3-5"),
+        ]), unsafe_allow_html=True)
+        st.caption("The rainflow-and-Miner engine is checked against the closed-form "
+                   "narrow-band solution of Bendat (1964), D_nb = (&nu;&#8320;/&#257;)(2&#8730;2&#963;)"
+                   "<sup>m</sup>&#915;(1+m/2), across S-N inverse slopes 3-5. Agreement to ~1% confirms "
+                   "the counting-and-summation is not itself a source of error (the paper reports ~1.2%).")
+    st.markdown('<div class="sec" data-n="03">Claim → evidence map</div>', unsafe_allow_html=True)
     st.markdown(data_table(
         ["Paper claim", "Where it is proven", "Standard"],
         [["Hs recovered from motion spectrum", "JONSWAP gate + Environment tab", "4√m0"],

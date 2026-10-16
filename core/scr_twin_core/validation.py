@@ -29,7 +29,7 @@ from .pipeline import run_full_analysis
 from .rainflow import count_cycles
 from .sn import SNEnvironment, get_curve
 from .spectral import jonswap, significant_from_m0, spectral_moments
-from .spectral_damage import dirlik_damage_rate
+from .spectral_damage import dirlik_damage_rate, narrowband_damage_rate
 from .stress import random_phase_timeseries, rfft_frequencies
 from .synthetic import synthetic_mru_motion
 
@@ -123,6 +123,45 @@ def _gate_cross_method(seed: int) -> GateResult:
     )
 
 
+def narrowband_bendat_vs_rainflow(
+    seed: int = 0, slopes: tuple[float, ...] = (3.0, 3.5, 4.0, 4.5, 5.0),
+) -> list[dict[str, float]]:
+    """SPE-235285 Fig. 7 data: rainflow+Miner vs the Bendat (1964) narrow-band
+    closed form (Eq. 12) across S-N inverse slopes.
+
+    A narrow-band Gaussian stress record is generated from a tight PSD and passed
+    through the same rainflow-and-Miner engine used throughout the twin, then
+    compared with ``D_nb = (nu0/a_bar)(2 sqrt(2) sigma)^m Gamma(1+m/2)``. The paper
+    reports agreement within about 1.2%, verifying the damage engine against an
+    analytical benchmark independent of the transfer function.
+    """
+    fs, n = 4.0, 2**20
+    freqs = rfft_frequencies(n, fs)
+    shape = np.exp(-((freqs - 0.12) ** 2) / (2.0 * 0.008**2))  # narrow band (alpha2 ~ 0.99)
+    psd = shape * (18.0**2) / np.trapezoid(shape, freqs)
+    moments = spectral_moments(freqs, psd, (0, 1, 2, 4))
+    x = random_phase_timeseries(freqs, psd, fs=fs, n_samples=n, seed=seed)
+    cy = count_cycles(x)
+    dur = n / fs
+    log_a = 12.164
+    rows: list[dict[str, float]] = []
+    for m in slopes:
+        d_rain = float(np.sum(cy.counts * cy.ranges**m) / 10.0**log_a) / dur
+        d_nb = narrowband_damage_rate(moments, sn_m=m, sn_log_a=log_a, stress_to_mpa=1.0)
+        err = abs(d_nb - d_rain) / d_rain if d_rain > 0.0 else 0.0
+        rows.append({"m": float(m), "rainflow_rate": d_rain, "bendat_rate": d_nb, "rel_error": err})
+    return rows
+
+
+def _gate_narrowband_bendat(seed: int) -> GateResult:
+    rows = narrowband_bendat_vs_rainflow(seed)
+    max_err = max(r["rel_error"] for r in rows)
+    return GateResult(
+        "Rainflow vs Bendat narrow-band", "physics", max_err < 0.03,
+        "rainflow & Bendat Eq.12 agree <3% (slopes 3-5)", f"max_error={max_err:.1%}",
+    )
+
+
 def _gate_environment() -> GateResult:
     ec = EnvironmentCorrection()
     red = ec.life_reduction
@@ -203,6 +242,7 @@ def run_all_gates(seed: int = 0) -> list[GateResult]:
         _gate_sn_table,
         _gate_seawater_cp,
         lambda: _gate_cross_method(seed),
+        lambda: _gate_narrowband_bendat(seed),
         _gate_environment,
         lambda: _gate_divergence(seed),
         _gate_bayesian,

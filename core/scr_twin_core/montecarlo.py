@@ -62,6 +62,39 @@ class UncertaintyModel:
         }
 
 
+def convexity_median_divergence(cov: float, sn_slope_m: float) -> float:
+    """Closed-form design-vs-ensemble median damage divergence (SPE-235285 Fig. 9).
+
+    Because fatigue damage grows approximately as ``H_s**m`` with S-N inverse slope
+    ``m``, a mean-preserving spread in the driving sea-state severity raises the
+    ensemble-median accumulated damage above the deterministic-design value. For a
+    lognormal sea-state climate with interannual coefficient of variation ``cov``
+    (``c``) the mean-preserving convexity gap is
+
+        divergence = (1 + c**2) ** (m*(m-1)/2) - 1
+
+    (Jensen's inequality on the convex damage law). The paper's operating point
+    ``c ~= 0.16, m = 4`` gives a median divergence of about 15%; the relation is a
+    scaling law, not a tuned number, and rises steeply with both ``c`` and ``m``.
+    """
+    if cov < 0.0:
+        raise ValueError("cov must be non-negative")
+    if sn_slope_m <= 0.0:
+        raise ValueError("sn_slope_m must be positive")
+    return float((1.0 + cov**2) ** (sn_slope_m * (sn_slope_m - 1.0) / 2.0) - 1.0)
+
+
+def convexity_divergence_curves(
+    cov_grid: NDArray[np.float64], slopes: tuple[float, ...] = (3.0, 4.0, 5.0)
+) -> dict[float, list[float]]:
+    """Fig. 9(a) data: median divergence vs interannual CoV for several S-N slopes."""
+    cov = np.asarray(cov_grid, dtype=np.float64)
+    return {
+        float(m): [convexity_median_divergence(float(c), float(m)) for c in cov]
+        for m in slopes
+    }
+
+
 @dataclass(frozen=True)
 class MonteCarloResult:
     """Remaining-life posterior from the Monte Carlo."""
