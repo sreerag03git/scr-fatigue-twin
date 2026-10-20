@@ -88,7 +88,7 @@ st.markdown(
     <style>
       @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500&display=swap');
       :root {
-        --bg:#f4f6f6; --panel:#ffffff; --panel2:#eef2f2; --ink:#17242b; --sub:#586a71;
+        --bg:#ffffff; --panel:#ffffff; --panel2:#f4f6f6; --ink:#17242b; --sub:#586a71;
         --muted:#93a3a9; --line:#e7ecec; --line2:#d6dedf; --accent:#0e7c82; --accent2:#16a6ac;
         --amber:#b07d1a; --alarm:#c0523f; --good:#2f855a; --wash:rgba(14,124,130,0.055);
         --mono:'IBM Plex Mono','JetBrains Mono',Consolas,monospace;
