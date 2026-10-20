@@ -273,67 +273,6 @@ st.markdown(
         .opening__stages span { animation:none; opacity:0; } .opening__stages span:last-child { opacity:1; }
       }
 
-      /* ===================== NEUMORPHISM SKIN =====================
-         Soft, monochrome surfaces: background and elements share one colour and
-         are shaped only by a paired light/dark shadow - raised cards, pressed
-         inputs, buttons that depress on click. Appended last so it wins. */
-      :root {
-        --bg:#e6eaef; --panel:#e6eaef; --panel2:#dfe4ea;
-        --line:#d2d8df; --line2:#cdd4dc;
-        --nm-d:#c4cbd4; --nm-l:#ffffff;
-        --nm-out:6px 6px 13px var(--nm-d), -6px -6px 13px var(--nm-l);
-        --nm-sm:3px 3px 7px var(--nm-d), -3px -3px 7px var(--nm-l);
-        --nm-in:inset 4px 4px 8px var(--nm-d), inset -4px -4px 8px var(--nm-l);
-        --shadow:var(--nm-out); --shadow-sm:var(--nm-sm); --r:18px;
-      }
-      .stApp, section[data-testid="stSidebar"] { background:var(--bg) !important; }
-      section[data-testid="stSidebar"] { box-shadow:7px 0 20px rgba(150,162,176,0.22); }
-      /* raised cards (shape from shadow, no borders) */
-      .titleblock, .kpi, .flowcard, .hero, .panel, .chip,
-      [data-testid="stExpander"] > details {
-        background:var(--bg) !important; border:none !important;
-        box-shadow:var(--nm-out) !important; border-radius:var(--r) !important; }
-      .titleblock { overflow:visible !important; }
-      .titleblock > div { border-left:none !important; }
-      .titleblock > div:not(:first-child)::before { content:""; position:absolute; left:0; top:22%;
-        height:56%; width:2px; border-radius:2px; box-shadow:1px 0 2px var(--nm-l), -1px 0 2px var(--nm-d); }
-      .kpi { box-shadow:var(--nm-sm) !important; } .kpi:hover { box-shadow:var(--nm-out) !important; }
-      .flowcard:hover { box-shadow:var(--nm-out) !important; }
-      .eq { background:var(--bg) !important; border:none !important; border-radius:13px !important;
-        box-shadow:var(--nm-in) !important; border-left:3px solid var(--accent) !important; }
-      .tag { background:var(--bg) !important; border:none !important; box-shadow:var(--nm-sm) !important; }
-      .sec[data-n]::before { background:var(--bg); box-shadow:var(--nm-sm); border:none !important;
-        border-radius:7px; padding:2px 8px; }
-      /* pressed inputs */
-      [data-baseweb="input"], [data-baseweb="select"] > div, .stNumberInput input,
-      .stTextInput input, .stTextArea textarea, [data-baseweb="base-input"] {
-        background:var(--bg) !important; border:none !important;
-        box-shadow:var(--nm-in) !important; border-radius:12px !important; }
-      .stNumberInput input, [data-baseweb="input"] input { box-shadow:none !important; background:transparent !important; }
-      /* buttons: raised, depress on click */
-      .stButton button, .stDownloadButton button {
-        background:var(--bg) !important; border:none !important; color:var(--ink) !important;
-        box-shadow:var(--nm-sm) !important; border-radius:13px !important;
-        transition:box-shadow .12s ease, transform .07s ease, color .12s ease; }
-      .stButton button:hover, .stDownloadButton button:hover {
-        box-shadow:var(--nm-out) !important; color:var(--accent) !important; }
-      .stButton button:active, .stDownloadButton button:active {
-        box-shadow:var(--nm-in) !important; transform:translateY(1px); }
-      .stButton button[kind="primary"], .stDownloadButton button[kind="primary"] {
-        background:var(--bg) !important; color:var(--accent) !important;
-        box-shadow:var(--nm-out) !important; font-weight:700 !important; }
-      .stButton button[kind="primary"]:hover { color:#0a666b !important; }
-      .stButton button[kind="primary"]:active { box-shadow:var(--nm-in) !important; }
-      /* nav rail: flat, raised on hover, inset (pressed-in) when active */
-      div[class*="st-key-nav_"] button { background:var(--bg) !important; box-shadow:none !important; }
-      div[class*="st-key-nav_"] button:hover { box-shadow:var(--nm-sm) !important; }
-      div[class*="st-key-nav_"] button[kind="primary"] {
-        box-shadow:var(--nm-in) !important; color:var(--accent) !important; }
-      .st-key-view_toggle button { box-shadow:var(--nm-out) !important; background:var(--ink) !important; color:#fff !important; }
-      /* wells: progress bars + gauge are carved in */
-      .gauge, .opening__bar { background:var(--bg) !important; box-shadow:var(--nm-in) !important; }
-      /* charts rest in a soft raised tray */
-      [data-testid="stExpander"] > details { box-shadow:var(--nm-sm) !important; }
     </style>
     """,
     unsafe_allow_html=True,
